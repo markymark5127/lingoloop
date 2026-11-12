@@ -72,24 +72,33 @@ const TTS_MODEL = process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts";
 const TTS_VOICE = process.env.OPENAI_TTS_VOICE || "coral";
 const STT_MODEL = process.env.OPENAI_STT_MODEL || "gpt-4o-mini-transcribe";
 
+// Optional separate provider for video script generation (defaults to the main client).
+const GROK_KEY = process.env.GROK_API_KEY?.trim();
+const GROK_BASE_URL = process.env.GROK_BASE_URL?.trim() || "https://api.x.ai/v1";
+const GROK_MODEL = process.env.GROK_MODEL || "grok-2-latest";
+
 export class GenerationRejected extends Error {}
 
 export class OpenAIProvider implements AIProvider {
   readonly name = "openai" as const;
   private client: OpenAI;
   private audio: OpenAI;
+  private videoClient: OpenAI;
+  private videoModel: string;
   constructor(apiKey: string) {
     this.client = new OpenAI({ apiKey, baseURL: BASE_URL });
     this.audio = AUDIO_KEY || AUDIO_BASE_URL ? new OpenAI({ apiKey: AUDIO_KEY || apiKey, baseURL: AUDIO_BASE_URL }) : this.client;
+    this.videoClient = GROK_KEY ? new OpenAI({ apiKey: GROK_KEY, baseURL: GROK_BASE_URL }) : this.client;
+    this.videoModel = GROK_KEY ? GROK_MODEL : MODEL;
   }
 
   /** Ask for JSON, validate with zod, retry with the validation errors as feedback. */
-  private async json<T>(system: string, user: string, schema: ZodType<T>, check?: (v: T) => string[], tries = 3): Promise<T> {
+  private async json<T>(system: string, user: string, schema: ZodType<T>, check?: (v: T) => string[], tries = 3, client = this.client, model = MODEL): Promise<T> {
     let feedback = "";
     let lastErr = "";
     for (let i = 0; i < tries; i++) {
-      const res = await this.client.chat.completions.create({
-        model: MODEL,
+      const res = await client.chat.completions.create({
+        model,
         response_format: { type: "json_object" },
         temperature: 0.8,
         messages: [
@@ -208,7 +217,7 @@ Make it genuinely funny, surprising or intriguing — a mini story with a twist.
       return this.json(system, this.contentBrief(ctx), VideoScript, (v) => [
         ...checkTargetText(v.body.scenes.map((s) => s.text), ctx.level, "ja").problems,
         ...readingProblems(v.body.scenes),
-      ]);
+      ], 3, this.videoClient, this.videoModel);
     }
     const system = `You write scripts for 20-45 second vertical short-form videos that teach Spanish through entertainment.
 Return JSON: {"title": string (Spanish, catchy), "summary": string (English, one sentence), "genre": one of ${JSON.stringify(GENRES)},
@@ -220,6 +229,7 @@ Narrate like a real Spanish-speaking short-form creator or storyteller would, no
 Make it genuinely funny, surprising or intriguing — a mini story with a twist.`;
     return this.json(system, this.contentBrief(ctx), VideoScript, (v) =>
       checkTargetText(v.body.scenes.map((s) => s.text), ctx.level).problems,
+      3, this.videoClient, this.videoModel,
     );
   }
 
