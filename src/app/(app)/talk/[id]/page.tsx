@@ -4,14 +4,20 @@ import { use, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client/api";
 import { browserRecognitionAvailable, createRecognizer, recordAndTranscribe, speak, stopSpeaking } from "@/lib/client/speech";
 import { useActivityTimer } from "@/lib/client/useActivityTimer";
-import { WordTapText } from "@/components/WordTapText";
+import { ReadingText, WordTapText } from "@/components/WordTapText";
+import { displayText } from "@/lib/lang";
+import { useTarget } from "@/lib/lang/client";
+
+const PLACEHOLDER = { es: "Escribe en español…", ja: "日本語で書いてください…" } as const;
 import { Button, ErrorBox, Spinner } from "@/components/ui";
 import type { ConversationSummary } from "@/lib/content/schemas";
+import { useT } from "@/lib/i18n/client";
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  reading?: string | null;
   translation?: string | null;
   via_voice?: boolean;
 }
@@ -23,6 +29,8 @@ interface Data {
 }
 
 export default function Conversation({ params }: { params: Promise<{ id: string }> }) {
+  const t = useT();
+  const lang = useTarget();
   const { id } = use(params);
   useActivityTimer("talk");
   const [data, setData] = useState<Data | null>(null);
@@ -92,7 +100,7 @@ export default function Conversation({ params }: { params: Promise<{ id: string 
     usedVoice.current = true;
     if (data?.aiMode === "openai" || !browserRecognitionAvailable()) {
       if (data?.aiMode !== "openai" && !browserRecognitionAvailable()) {
-        setError("Voice input needs Chrome/Edge/Safari speech recognition, or OPENAI_API_KEY on the server.");
+        setError(t("Voice input needs Chrome/Edge/Safari speech recognition, or OPENAI_API_KEY on the server."));
         return;
       }
       setListening(true);
@@ -134,19 +142,19 @@ export default function Conversation({ params }: { params: Promise<{ id: string 
     }
   }
 
-  if (!data) return <div className="grid h-64 place-items-center">{error ? <ErrorBox message={error} /> : <Spinner label="Joining conversation…" />}</div>;
+  if (!data) return <div className="grid h-64 place-items-center">{error ? <ErrorBox message={error} /> : <Spinner label={t("Joining conversation…")} />}</div>;
   const ended = !!summary || data.session.status === "ended";
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-8.5rem)] max-w-2xl flex-col md:h-dvh">
-      <header className="flex items-center gap-3 border-b border-border px-4 py-3">
-        <Link href="/talk" aria-label="Back" className="rounded-lg px-2 py-1 text-muted hover:text-text">←</Link>
+    <div className="mx-auto flex h-[calc(100dvh-11.5rem)] max-w-2xl flex-col md:h-dvh">
+      <header className="glass mx-3 mt-3 flex items-center gap-3 rounded-[24px] px-3 py-2.5 md:mt-4">
+        <Link href="/talk" aria-label={t("Back")} className="rounded-lg px-2 py-1 text-muted hover:text-text">←</Link>
         <span className="emoji grid h-11 w-11 place-items-center rounded-full bg-surface-2 text-2xl">{data.scenario.emoji}</span>
         <div className="min-w-0 flex-1">
           <p className="font-bold">{data.scenario.character}</p>
           <p className="truncate text-xs text-muted">{data.scenario.title} · 🎯 {data.scenario.goal}</p>
         </div>
-        <button onClick={() => setVoiceOut(!voiceOut)} aria-pressed={voiceOut} aria-label={voiceOut ? "Mute spoken replies" : "Speak replies"} className="grid h-10 w-10 place-items-center rounded-full bg-surface-2">
+        <button onClick={() => setVoiceOut(!voiceOut)} aria-pressed={voiceOut} aria-label={voiceOut ? t("Mute spoken replies") : t("Speak replies")} className="grid h-10 w-10 place-items-center rounded-full bg-surface-2">
           <span className="emoji">{voiceOut ? "🔊" : "🔇"}</span>
         </button>
       </header>
@@ -154,22 +162,22 @@ export default function Conversation({ params }: { params: Promise<{ id: string 
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4" aria-live="polite">
         {messages.map((m) => (
           <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`animate-rise max-w-[85%] rounded-3xl px-4 py-2.5 ${m.role === "user" ? "rounded-br-md bg-accent text-white" : "rounded-bl-md bg-surface-2"}`}>
-              {m.role === "assistant" ? <WordTapText text={m.content} className="text-[1.05rem]" /> : <p className="text-[1.05rem]">{m.content}</p>}
+            <div data-testid={m.role === "user" ? "user-message" : "ai-message"} className={`animate-rise max-w-[85%] rounded-3xl px-4 py-2.5 ${m.role === "user" ? "rounded-br-md bg-accent-gradient text-white shadow-md shadow-accent/20" : "rounded-bl-md glass-strong"}`}>
+              {m.role === "assistant" ? <WordTapText text={m.content} reading={m.reading} className="text-[1.05rem] leading-loose" /> : <p className="text-[1.05rem]">{m.content}</p>}
               {m.role === "assistant" && (
                 <div className="mt-1 flex gap-3 text-xs text-muted">
-                  <button onClick={() => speak(m.content)} className="hover:text-text">🔊 Play</button>
-                  {m.translation && <button onClick={() => setShownEn((s) => ({ ...s, [m.id]: !s[m.id] }))} className="hover:text-text">🌐 {shownEn[m.id] ? "Hide" : "Translate"}</button>}
+                  <button onClick={() => speak(m.content)} className="hover:text-text">🔊 {t("Play audio")}</button>
+                  {m.translation && <button onClick={() => setShownEn((s) => ({ ...s, [m.id]: !s[m.id] }))} className="hover:text-text">🌐 {shownEn[m.id] ? t("Hide") : t("Translate")}</button>}
                 </div>
               )}
               {m.role === "assistant" && shownEn[m.id] && <p className="mt-1 text-sm text-muted">{m.translation}</p>}
-              {m.role === "user" && m.via_voice && <p className="mt-0.5 text-right text-[10px] opacity-75">🎙 spoken</p>}
+              {m.role === "user" && m.via_voice && <p className="mt-0.5 text-right text-[10px] opacity-75">🎙 {t("spoken")}</p>}
             </div>
           </div>
         ))}
         {sending && (
           <div className="flex justify-start">
-            <div className="rounded-3xl rounded-bl-md bg-surface-2 px-4 py-3 text-muted">
+            <div className="glass-strong rounded-3xl rounded-bl-md px-4 py-3 text-muted">
               <span className="animate-pulse">{data.scenario.character} is typing…</span>
             </div>
           </div>
@@ -181,24 +189,24 @@ export default function Conversation({ params }: { params: Promise<{ id: string 
       {error && <div className="px-4 pb-2"><ErrorBox message={error} /></div>}
 
       {!ended ? (
-        <div className="border-t border-border bg-surface px-3 py-3">
-          <form onSubmit={(e) => { e.preventDefault(); send(); }} className="flex items-center gap-2">
-            <button type="button" onClick={mic} aria-label={listening ? "Stop recording" : "Speak"} aria-pressed={listening} className={`grid h-12 w-12 shrink-0 place-items-center rounded-full text-xl transition ${listening ? "animate-pulse bg-danger text-white" : "bg-surface-2"}`}>
+        <div className="px-3 pb-3">
+          <form onSubmit={(e) => { e.preventDefault(); send(); }} className="glass flex items-center gap-2 rounded-full p-1.5">
+            <button type="button" onClick={mic} aria-label={listening ? t("Stop recording") : t("Speak into the microphone")} aria-pressed={listening} className={`grid h-12 w-12 shrink-0 place-items-center rounded-full text-xl transition ${listening ? "animate-pulse bg-danger text-white" : "bg-surface-2"}`}>
               <span className="emoji">🎙️</span>
             </button>
-            <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={listening ? "Listening… speak Spanish" : "Escribe en español…"} aria-label="Message" className="min-h-12 flex-1 rounded-full border border-border bg-bg px-4 outline-none focus:border-accent-2" />
-            <Button type="submit" disabled={!input.trim()} loading={sending} className="!rounded-full">Send</Button>
+            <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={listening ? (lang === "ja" ? t("Listening… speak Japanese") : t("Listening… speak Spanish")) : PLACEHOLDER[lang]} aria-label={t("Message")} className="min-h-12 flex-1 rounded-full border border-border bg-surface-solid/60 px-4 outline-none focus:border-accent-2" />
+            <Button type="submit" disabled={!input.trim()} loading={sending} className="!rounded-full">{t("Send")}</Button>
           </form>
-          <div className="mt-2 flex justify-between text-xs text-muted">
-            <span>Tap any word in a reply for its meaning</span>
+          <div className="mt-2 flex justify-between px-3 text-xs text-muted">
+            <span>{t("Tap any word in a reply for its meaning")}</span>
             <button onClick={end} disabled={ending || messages.filter((m) => m.role === "user").length === 0} className="font-semibold text-accent disabled:opacity-40">
-              {ending ? "Summarizing…" : "End & get feedback"}
+              {ending ? t("Summarizing…") : t("End & get feedback")}
             </button>
           </div>
         </div>
       ) : (
         <div className="border-t border-border p-3">
-          <Link href="/talk" className="flex min-h-11 items-center justify-center rounded-xl bg-accent font-semibold text-white">Start another conversation</Link>
+          <Link href="/talk" className="flex min-h-11 items-center justify-center rounded-full bg-accent-gradient font-semibold text-white shadow-lg shadow-accent/30">{t("Start another conversation")}</Link>
         </div>
       )}
     </div>
@@ -206,23 +214,24 @@ export default function Conversation({ params }: { params: Promise<{ id: string 
 }
 
 function SummaryCard({ s }: { s: ConversationSummary }) {
+  const t = useT();
   return (
-    <div className="animate-pop space-y-4 rounded-3xl border border-border bg-surface p-5">
-      <p className="font-display text-xl font-extrabold">Conversation feedback</p>
+    <div className="animate-pop space-y-4 glass rounded-[32px] p-5">
+      <p className="font-display text-xl font-extrabold">{t("Conversation feedback")}</p>
       <p className="text-sm">{s.overview}</p>
       {s.strengths.length > 0 && (
         <div>
-          <p className="text-sm font-bold text-success">What went well</p>
+          <p className="text-sm font-bold text-success">{t("What went well")}</p>
           <ul className="list-disc pl-5 text-sm">{s.strengths.map((x, i) => <li key={i}>{x}</li>)}</ul>
         </div>
       )}
       {s.corrections.length > 0 && (
         <div>
-          <p className="text-sm font-bold text-danger">Worth fixing</p>
+          <p className="text-sm font-bold text-danger">{t("Worth fixing")}</p>
           <ul className="space-y-2 text-sm">
             {s.corrections.map((c, i) => (
               <li key={i} className="rounded-xl bg-surface-2 p-3">
-                <span className="line-through opacity-70">{c.original}</span> → <b>{c.corrected}</b>
+                <span className="line-through opacity-70">{displayText(c.original)}</span> → <b>{displayText(c.corrected)}</b>
                 <p className="text-xs text-muted">{c.explanation}</p>
               </li>
             ))}
@@ -231,11 +240,20 @@ function SummaryCard({ s }: { s: ConversationSummary }) {
       )}
       {s.usefulPhrases.length > 0 && (
         <div>
-          <p className="text-sm font-bold">Useful phrases</p>
-          <ul className="text-sm">{s.usefulPhrases.map((p, i) => <li key={i}><button onClick={() => speak(p.es)} className="hover:text-accent">🔊 <b>{p.es}</b></button> — {p.en}</li>)}</ul>
+          <p className="text-sm font-bold">{t("Useful phrases")}</p>
+          <ul className="space-y-1 text-sm">
+            {s.usefulPhrases.map((p, i) => (
+              <li key={i}>
+                <button onClick={() => speak(p.es)} className="text-left hover:text-accent">
+                  🔊 <ReadingText text={p.es} reading={p.reading} className="font-bold leading-loose" />
+                </button>{" "}
+                — {p.en}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
-      <p className="rounded-xl bg-accent-soft p-3 text-sm"><b>Next:</b> {s.nextStep}</p>
+      <p className="rounded-xl bg-accent-soft p-3 text-sm"><b>{t("Next:")}</b> {s.nextStep}</p>
     </div>
   );
 }

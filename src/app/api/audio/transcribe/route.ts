@@ -1,5 +1,7 @@
 import { route, requireUser, rateLimit, HttpError } from "@/lib/api/http";
 import { ai, aiMode } from "@/lib/ai";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import { getProfile, targetOf } from "@/lib/learning/service";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
@@ -12,6 +14,7 @@ export const POST = route(async (req) => {
   const file = form?.get("audio");
   if (!(file instanceof File)) throw new HttpError(400, "Missing audio file");
   if (file.size > MAX_BYTES) throw new HttpError(413, "Recording too long");
-  const text = await ai().transcribe(file);
+  const lang = targetOf(await getProfile(supabaseAdmin(), user.id));
+  const text = await ai().transcribe(file, lang);
   return { text: text ?? "" };
 });

@@ -1,8 +1,16 @@
 "use client";
 /**
- * Speech output: server TTS (OpenAI) when available, otherwise the browser's Spanish voice.
+ * Speech output: server TTS (OpenAI) when available, otherwise the browser's voice for the
+ * language being learned (Spanish or Japanese, detected from the text's script).
  * Speech input: browser SpeechRecognition when available, otherwise record + server transcription.
  */
+import { TARGET_INFO, displayText, langOfText, type TargetLang } from "@/lib/lang";
+
+let target: TargetLang = "es";
+/** Set by TargetProvider: the language speech recognition listens for. */
+export function setSpeechTarget(lang: TargetLang) {
+  target = lang;
+}
 
 const cache = new Map<string, string>();
 let serverTts: boolean | null = null;
@@ -14,17 +22,18 @@ export function stopSpeaking() {
   if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
 }
 
-function spanishVoice(): SpeechSynthesisVoice | undefined {
+function voiceFor(lang: TargetLang): SpeechSynthesisVoice | undefined {
   const voices = speechSynthesis.getVoices();
-  return voices.find((v) => v.lang === "es-ES") ?? voices.find((v) => v.lang.startsWith("es"));
+  const tag = TARGET_INFO[lang].bcp47;
+  return voices.find((v) => v.lang === tag) ?? voices.find((v) => v.lang.replace("_", "-").startsWith(lang));
 }
 
-function browserSpeak(text: string, rate: number): Promise<void> {
+function browserSpeak(text: string, rate: number, lang: TargetLang): Promise<void> {
   return new Promise((resolve) => {
     if (typeof speechSynthesis === "undefined") return resolve();
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = "es-ES";
-    const v = spanishVoice();
+    u.lang = TARGET_INFO[lang].bcp47;
+    const v = voiceFor(lang);
     if (v) u.voice = v;
     u.rate = rate;
     u.onend = () => resolve();
@@ -35,22 +44,24 @@ function browserSpeak(text: string, rate: number): Promise<void> {
   });
 }
 
-export async function speak(text: string, opts: { rate?: number } = {}): Promise<void> {
+export async function speak(raw: string, opts: { rate?: number; lang?: TargetLang } = {}): Promise<void> {
   stopSpeaking();
   const rate = opts.rate ?? 0.95;
+  const lang = opts.lang ?? langOfText(raw);
+  const text = displayText(raw);
   if (serverTts !== false) {
     try {
-      let url = cache.get(text);
+      let url = cache.get(`${lang}|${text}`);
       if (!url) {
-        const res = await fetch("/api/audio/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+        const res = await fetch("/api/audio/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, lang }) });
         if (res.status === 204) {
           serverTts = false;
-          return browserSpeak(text, rate);
+          return browserSpeak(text, rate, lang);
         }
         if (!res.ok) throw new Error("tts failed");
         serverTts = true;
         url = URL.createObjectURL(await res.blob());
-        cache.set(text, url);
+        cache.set(`${lang}|${text}`, url);
       }
       const audio = new Audio(url);
       audio.playbackRate = rate;
@@ -65,7 +76,7 @@ export async function speak(text: string, opts: { rate?: number } = {}): Promise
       /* fall through */
     }
   }
-  return browserSpeak(text, rate);
+  return browserSpeak(text, rate, lang);
 }
 
 // ---------------------------------------------------------------- input
@@ -91,7 +102,7 @@ export function createRecognizer(onText: (text: string, final: boolean) => void,
   const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
   if (!Ctor) return null;
   const r = new Ctor();
-  r.lang = "es-ES";
+  r.lang = TARGET_INFO[target].bcp47;
   r.interimResults = true;
   r.continuous = false;
   r.onresult = (e) => {
