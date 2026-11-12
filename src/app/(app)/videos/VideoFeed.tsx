@@ -272,10 +272,11 @@ function VideoCard({ item, active, onNext }: { item: VideoItem; active: boolean;
         {item.recommendation.reasons[0] && <p className="inline-block rounded-full bg-black/40 px-3 py-1 text-xs font-medium backdrop-blur">🎯 {item.recommendation.reasons[0]}</p>}
       </div>
 
-      {/* Captions */}
-      <div className="absolute inset-x-0 bottom-36 px-4 md:bottom-28" onClick={(e) => e.stopPropagation()}>
+      {/* Captions. AI-generated clips sometimes come with burned-in subtitles in the lower third;
+          this near-opaque box sits over that band so only our tap-to-translate captions show. */}
+      <div className="absolute inset-x-0 bottom-[13%] px-3" onClick={(e) => e.stopPropagation()}>
         {scene && (
-          <div key={sceneIdx} data-testid="caption" className="animate-rise mx-auto max-w-md rounded-2xl bg-black/55 px-4 py-3 text-center backdrop-blur">
+          <div key={sceneIdx} data-testid="caption" className="animate-rise mx-auto flex min-h-[8.5rem] w-full max-w-lg flex-col justify-center rounded-2xl bg-black/95 px-4 py-3 text-center backdrop-blur">
             <WordTapText
               text={scene.text}
               reading={scene.reading}
