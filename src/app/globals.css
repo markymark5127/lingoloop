@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg: #f7f5fb;
+  --surface: #ffffff;
+  --surface-2: #f0edf7;
+  --border: #e4dfef;
+  --text: #17141f;
+  --muted: #6b6480;
+  --accent: #ff4d6d;
+  --accent-2: #7c5cff;
+  --accent-soft: #ffe3e9;
+  --success: #12a150;
+  --success-soft: #dcf7e7;
+  --danger: #e5484d;
+  --danger-soft: #fde6e7;
+  --warning: #f5a524;
+}
+
+.dark {
+  --bg: #0d0b14;
+  --surface: #17141f;
+  --surface-2: #211d2c;
+  --border: #2d2839;
+  --text: #f3f0fa;
+  --muted: #a39cb8;
+  --accent: #ff5c7a;
+  --accent-2: #9b82ff;
+  --accent-soft: #3a1622;
+  --success: #3ddc84;
+  --success-soft: #0f2e1d;
+  --danger: #ff6b70;
+  --danger-soft: #3a1416;
+  --warning: #ffc04d;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --font-sans: var(--font-geist-sans);
+  --font-display: var(--font-display);
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
+}
+
+.emoji {
+  font-family: "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+}
+
+/* hide scrollbar for the snap feed */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+@keyframes pop-in {
+  0% { transform: scale(0.85); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+@keyframes rise {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-pop { animation: pop-in 0.25s ease-out; }
+.animate-shake { animation: shake 0.3s ease-in-out 2; }
+.animate-rise { animation: rise 0.3s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
