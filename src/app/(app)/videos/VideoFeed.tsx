@@ -10,6 +10,7 @@ import { Chip, EmptyState, ErrorBox, Spinner } from "@/components/ui";
 import { useT } from "@/lib/i18n/client";
 import { TARGET_INFO } from "@/lib/lang";
 import { useTarget } from "@/lib/lang/client";
+import { GENERATION_ENABLED } from "@/lib/features";
 
 const WHAT_HAPPENED = { es: "¿Qué pasó?", ja: "どんな話でしたか？" } as const;
 
@@ -117,13 +118,13 @@ export function VideoFeed() {
           <section data-index={items.length} className="flex h-full snap-start flex-col items-center justify-center gap-4 px-8 text-center">
             {items.length === 0 ? (
               <EmptyState emoji="🎬" title={t("No videos here yet")}>
-                <span className="text-white/70">{t("Generate one made just for you.")}</span>
+                {GENERATION_ENABLED && <span className="text-white/70">{t("Generate one made just for you.")}</span>}
               </EmptyState>
             ) : (
               <>
                 <div className="emoji text-6xl">✨</div>
                 <h2 className="font-display text-2xl font-bold">{t("You're all caught up")}</h2>
-                <p className="max-w-xs text-white/70">{t("Generate a fresh video written around your interests and the words you're practicing.")}</p>
+                {GENERATION_ENABLED && <p className="max-w-xs text-white/70">{t("Generate a fresh video written around your interests and the words you're practicing.")}</p>}
               </>
             )}
             <GenerateButton kind="video" genre={genre ?? undefined} label={t("Make me a new video")} onReady={(id) => router.push(`/videos?start=${id}`)} />
