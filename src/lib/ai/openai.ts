@@ -92,6 +92,11 @@ export class OpenAIProvider implements AIProvider {
     this.videoModel = GROK_KEY ? GROK_MODEL : MODEL;
   }
 
+  /** Which model writes (and reviews) video scripts. */
+  get videoScriptModel() {
+    return { provider: GROK_KEY ? ("grok" as const) : ("openai" as const), model: this.videoModel };
+  }
+
   /** Ask for JSON, validate with zod, retry with the validation errors as feedback. */
   private async json<T>(system: string, user: string, schema: ZodType<T>, check?: (v: T) => string[], tries = 3, client = this.client, model = MODEL): Promise<T> {
     let feedback = "";
@@ -99,6 +104,8 @@ export class OpenAIProvider implements AIProvider {
     for (let i = 0; i < tries; i++) {
       const res = await client.chat.completions.create({
         model,
+        // grok-4.x reasons at "high" by default, which makes each script take minutes.
+        ...(GROK_KEY && client === this.videoClient ? ({ reasoning_effort: process.env.GROK_REASONING_EFFORT || "medium" } as object) : {}),
         response_format: { type: "json_object" },
         temperature: 0.8,
         messages: [
@@ -152,7 +159,7 @@ export class OpenAIProvider implements AIProvider {
    * translated, textbook-like or unnatural (same meaning, same level). Japanese readings are
    * re-checked; if the edit doesn't validate, the original lines are kept.
    */
-  private async nativeReview(lang: TargetLang, level: string, lines: { text: string; reading?: string; en: string }[]) {
+  private async nativeReview(lang: TargetLang, level: string, lines: { text: string; reading?: string; en: string }[], client = this.client, model = MODEL) {
     if (!REVIEW_ENABLED || !lines.length) return lines;
     const { z } = await import("zod");
     const Line = z.object({ text: z.string().min(1), reading: z.string().optional(), en: z.string() });
@@ -168,7 +175,7 @@ Return JSON {"lines": [{"text": ${name} line${lang === "ja" ? ', "reading": kana
         ...(r.lines.length !== lines.length ? [`return exactly ${lines.length} lines`] : []),
         ...checkTargetText(r.lines.map((l) => l.text), level, lang).problems,
         ...(lang === "ja" ? readingProblems(r.lines) : []),
-      ], 2);
+      ], 2, client, model);
       return out.lines;
     } catch {
       return lines;
@@ -179,7 +186,8 @@ Return JSON {"lines": [{"text": ${name} line${lang === "ja" ? ', "reading": kana
     const v = await this.draftVideo(ctx);
     const lang = ctx.language ?? "es";
     const ja = lang === "ja";
-    const edited = await this.nativeReview(lang, ctx.level, v.body.scenes.map((s) => ({ text: s.text, ...(ja ? { reading: s.reading } : {}), en: s.translation })));
+    // Review with the same provider that wrote the script (Grok when configured).
+    const edited = await this.nativeReview(lang, ctx.level, v.body.scenes.map((s) => ({ text: s.text, ...(ja ? { reading: s.reading } : {}), en: s.translation })), this.videoClient, this.videoModel);
     v.body.scenes = v.body.scenes.map((s, i) => {
       const e = edited[i];
       if (!e || e.text === s.text) return s;
@@ -212,7 +220,8 @@ Return JSON: {"title": string (Japanese, catchy, no spaces), "summary": string (
 "questions": [{"q": English comprehension question, "options": 3 short English options, "answer": index of correct option}] (2 questions)}}.
 ${NATIVE.ja}
 ${JA_FORMAT}
-Narrate like a real Japanese short-form creator or storyteller would (vlog-style, reactions, plain or casual forms), not like a textbook.
+This is a viral TikTok-style video: every line is SPOKEN ON CAMERA by a creator or the characters (talking to the camera or to each other), so write it exactly the way a native Japanese creator would actually say it out loud — vlog-style, reactions, plain or casual forms — never like a textbook or a narrator.
+Open with a hook in the first line. One short spoken line per scene (it must fit a 3-8 second clip).
 Make it genuinely funny, surprising or intriguing — a mini story with a twist.`;
       return this.json(system, this.contentBrief(ctx), VideoScript, (v) => [
         ...checkTargetText(v.body.scenes.map((s) => s.text), ctx.level, "ja").problems,
@@ -225,7 +234,8 @@ Return JSON: {"title": string (Spanish, catchy), "summary": string (English, one
 "questions": [{"q": English comprehension question, "options": 3 short English options, "q_ja": the same question in Japanese, "options_ja": the same 3 options in Japanese in the same order, "answer": index of correct option}] (2 questions)}}.
 ${NATIVE.es}
 ${BILINGUAL}
-Narrate like a real Spanish-speaking short-form creator or storyteller would, not like a textbook.
+This is a viral TikTok-style video: every line is SPOKEN ON CAMERA by a creator or the characters (talking to the camera or to each other), so write it exactly the way a native Spanish speaker would actually say it out loud — natural, casual, with real reactions — never like a textbook or a narrator.
+Open with a hook in the first line. One short spoken line per scene (it must fit a 3-8 second clip).
 Make it genuinely funny, surprising or intriguing — a mini story with a twist.`;
     return this.json(system, this.contentBrief(ctx), VideoScript, (v) =>
       checkTargetText(v.body.scenes.map((s) => s.text), ctx.level).problems,
