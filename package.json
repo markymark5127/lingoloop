@@ -9,7 +9,10 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "worker": "tsx worker/index.ts",
+    "worker:hosted": "set -a && . ./.env.hosted && set +a && tsx worker/index.ts",
     "seed": "tsx scripts/seed.ts",
+    "seed:hosted": "set -a && . ./.env.hosted && set +a && tsx scripts/seed.ts",
+    "starters:hosted": "set -a && . ./.env.hosted && set +a && tsx scripts/generate-starters.ts",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "db:reset": "supabase db reset && npm run seed && npm run worker -- --once"
