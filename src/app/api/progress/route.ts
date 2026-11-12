@@ -1,7 +1,8 @@
 import { route, requireUser } from "@/lib/api/http";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { getProfile, loadVocab, rankedContent } from "@/lib/learning/service";
+import { eventLanguage, getProfile, loadVocab, localizeVocab, rankedContent, targetOf, type EventLangRow } from "@/lib/learning/service";
+import { makeT, toLocale } from "@/lib/i18n/core";
 import { label, overall, suggestLevel, weakestSkill, type SkillState } from "@/lib/engine";
 
 /** Aggregated progress. Reads go through the RLS-scoped client (own data only). */
@@ -12,14 +13,18 @@ export const GET = route(async (req) => {
   const admin = supabaseAdmin();
   const since = new Date(Date.now() - 30 * 86400000).toISOString();
 
-  const [profile, vocab, timeRows, answerRows, uv, sessions] = await Promise.all([
-    getProfile(admin, user.id),
-    loadVocab(admin),
+  const profile = await getProfile(admin, user.id);
+  const lang = targetOf(profile);
+  const [vocab, timeRows, answerRows, uv, sessions] = await Promise.all([
+    loadVocab(admin, lang),
     db.from("learning_events").select("activity, seconds, created_at").eq("user_id", user.id).eq("event_type", "active_time").limit(20000),
-    db.from("learning_events").select("activity, skill, correct, created_at").eq("user_id", user.id).eq("event_type", "answer").order("created_at", { ascending: false }).limit(2000),
+    db.from("learning_events").select("activity, skill, correct, created_at, vocabulary_items(language), content_items(language)").eq("user_id", user.id).eq("event_type", "answer").order("created_at", { ascending: false }).limit(2000),
     db.from("user_vocabulary").select("*").eq("user_id", user.id),
-    db.from("conversation_sessions").select("id, created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(1),
+    db.from("conversation_sessions").select("id, created_at").eq("user_id", user.id).eq("language", lang).order("created_at", { ascending: false }).limit(1),
   ]);
+
+  const locale = toLocale(profile.native_language);
+  const t = makeT(locale);
 
   // ---- time
   const time = { video: 0, story: 0, game: 0, talk: 0 } as Record<string, number>;
@@ -44,9 +49,11 @@ export const GET = route(async (req) => {
   // ---- vocabulary
   const vById = new Map(vocab.map((v) => [v.id, v]));
   const now = Date.now();
-  const words = (uv.data ?? []).map((r) => {
+  // Progress is per target language: only words from the language being learned.
+  const words = (uv.data ?? []).filter((r) => vById.has(r.vocab_id)).map((r) => {
     const s: SkillState = { recognition: r.recognition, listening: r.listening, production: r.production };
-    const v = vById.get(r.vocab_id);
+    const raw = vById.get(r.vocab_id);
+    const v = raw && localizeVocab(raw, locale);
     return {
       vocabId: r.vocab_id,
       lemma: v?.lemma ?? "?",
@@ -72,7 +79,7 @@ export const GET = route(async (req) => {
   };
 
   // ---- performance
-  const answers = answerRows.data ?? [];
+  const answers = ((answerRows.data ?? []) as unknown as ({ activity: string; skill: string | null; correct: boolean; created_at: string } & EventLangRow)[]).filter((a) => eventLanguage(a) === lang);
   const acc = (f: (a: (typeof answers)[number]) => boolean) => {
     const sel = answers.filter(f);
     return { correct: sel.filter((a) => a.correct).length, total: sel.length };
@@ -92,25 +99,27 @@ export const GET = route(async (req) => {
     strongWords: words.filter((w) => w.mastery >= 0.6).length,
     recentAccuracy: recent.length ? recent.filter((a) => a.correct).length / recent.length : 0,
     recentAnswers: recent.length,
+    locale,
   });
 
   // ---- recommendations
   const recs: { title: string; detail: string; href: string }[] = [];
-  if (counts.due > 0) recs.push({ title: `Review ${counts.due} word${counts.due === 1 ? "" : "s"}`, detail: "Due for spaced review — quick games will bring them back.", href: "/games?mode=review" });
+  if (counts.due > 0) recs.push({ title: t(counts.due === 1 ? "Review {n} word" : "Review {n} words", { n: counts.due }), detail: t("Due for spaced review — quick games will bring them back."), href: "/games?mode=review" });
   const avgSkills: SkillState = { recognition: avg("recognition"), listening: avg("listening"), production: avg("production") };
   if (words.length >= 5) {
     const weak = weakestSkill(avgSkills);
-    if (weak === "production") recs.push({ title: "Practice speaking", detail: "Your production is your weakest skill — try a roleplay with the microphone.", href: "/talk" });
-    if (weak === "listening") recs.push({ title: "Train your ear", detail: "Listening is lagging — watch a video and play audio-matching games.", href: "/games?type=audio_match" });
+    if (weak === "production") recs.push({ title: t("Practice speaking"), detail: t("Your production is your weakest skill — try a roleplay with the microphone."), href: "/talk" });
+    if (weak === "listening") recs.push({ title: t("Train your ear"), detail: t("Listening is lagging — watch a video and play audio-matching games."), href: "/games?type=audio_match" });
   }
   const [topVideo] = await rankedContent(db, admin, user.id, "video");
   const [topStory] = await rankedContent(db, admin, user.id, "story");
-  if (topVideo) recs.push({ title: `Watch "${topVideo.title}"`, detail: topVideo.recommendation.reasons[0] ?? "Picked for you", href: `/videos?start=${topVideo.id}` });
-  if (topStory) recs.push({ title: `Read "${topStory.title}"`, detail: topStory.recommendation.reasons[0] ?? "Picked for you", href: `/stories/${topStory.id}` });
+  if (topVideo) recs.push({ title: t('Watch "{title}"', { title: topVideo.title }), detail: topVideo.recommendation.reasons[0] ?? t("Picked for you"), href: `/videos?start=${topVideo.id}` });
+  if (topStory) recs.push({ title: t('Read "{title}"', { title: topStory.title }), detail: topStory.recommendation.reasons[0] ?? t("Picked for you"), href: `/stories/${topStory.id}` });
   const lastTalk = sessions.data?.[0]?.created_at;
-  if (!lastTalk || now - new Date(lastTalk).getTime() > 3 * 86400000) recs.push({ title: "Have a conversation", detail: "It's been a while since you practiced speaking.", href: "/talk" });
+  if (!lastTalk || now - new Date(lastTalk).getTime() > 3 * 86400000) recs.push({ title: t("Have a conversation"), detail: t("It's been a while since you practiced speaking."), href: "/talk" });
 
   return {
+    targetLanguage: lang,
     level: profile.level,
     levelDecision: level,
     dailyGoalMinutes: profile.daily_goal_minutes,

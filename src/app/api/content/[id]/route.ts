@@ -1,13 +1,17 @@
 import { route, requireUser, HttpError } from "@/lib/api/http";
 import { supabaseServer } from "@/lib/supabase/server";
 import { publicQuestions, type Question } from "@/lib/content/schemas";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import { userLocale } from "@/lib/learning/service";
+import { localizeContent } from "@/lib/i18n/content";
 
 export const GET = route(async (_req, ctx: { params: Promise<{ id: string }> }) => {
   const user = await requireUser();
   const { id } = await ctx.params;
   const db = await supabaseServer();
-  const { data: c } = await db.from("content_items").select("*, media_assets(kind, public_url, duration_ms, meta)").eq("id", id).maybeSingle();
-  if (!c) throw new HttpError(404, "Not found");
+  const [{ data: row }, locale] = await Promise.all([db.from("content_items").select("*, media_assets(kind, public_url, duration_ms, meta)").eq("id", id).maybeSingle(), userLocale(supabaseAdmin(), user.id)]);
+  if (!row) throw new HttpError(404, "Not found");
+  const c = localizeContent(row, locale);
   const { data: progress } = await db.from("content_progress").select("*").eq("user_id", user.id).eq("content_id", id).maybeSingle();
   const body = c.body as { questions?: Question[]; chapters?: { questions: Question[] }[] };
   let next: { id: string; title: string } | null = null;
