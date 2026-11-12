@@ -71,7 +71,12 @@ function sceneHtml(scene: VideoBody["scenes"][number], title: string, index: num
 }
 
 const FIT = `scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=${FPS},format=yuv420p`;
-const ENC = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k", "-ac", "2"];
+/**
+ * H.264 Constrained Baseline: some browsers (e.g. Firefox on Linux using OpenH264) can only decode
+ * Baseline and play High-profile video as audio over a frozen first frame. Baseline plays everywhere.
+ */
+const H264 = ["-c:v", "libx264", "-profile:v", "baseline", "-level", "3.1", "-preset", "veryfast", "-crf", "23"];
+const ENC = [...H264, "-c:a", "aac", "-b:a", "128k", "-ac", "2"];
 
 async function hasAudio(file: string) {
   const { stdout } = await run("ffprobe", ["-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", file]);
@@ -235,8 +240,7 @@ export async function renderVideo(ai: AIProvider, title: string, body: VideoBody
             `[1:a]aresample=44100,apad=pad_dur=${PAD}[a]`,
           "-map", "[v]", "-map", "[a]",
           "-t", sceneDur.toFixed(3),
-          "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-          "-c:a", "aac", "-b:a", "128k", "-ac", "2",
+          ...ENC,
           clip,
         ]);
         clips.push(clip);
