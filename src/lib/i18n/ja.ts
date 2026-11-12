@@ -75,6 +75,7 @@ export const JA: Record<string, string> = {
   "Generate a fresh video written around your interests and the words you're practicing.": "あなたの好みと練習中の単語に合わせた新しい動画を作りましょう。",
   "Make me a new video": "新しい動画を作る",
   "Play video": "動画を再生",
+  "Tap for sound": "タップで音声オン",
   "Unlike": "いいねを取り消す",
   "Like": "いいね",
   "Remove bookmark": "ブックマークを外す",
