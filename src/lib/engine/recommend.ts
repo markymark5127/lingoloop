@@ -7,6 +7,7 @@
  */
 import { overall, type SkillState } from "./mastery";
 import { CEFR_LEVELS, type Cefr } from "./level";
+import { translate, type Locale } from "../i18n/core";
 
 export interface UserWordState {
   vocabId: string;
@@ -14,6 +15,8 @@ export interface UserWordState {
   dueAt: Date | null;
   incorrectCount: number;
   exposures: number;
+  /** when the learner last answered an exercise on this word */
+  lastReviewedAt?: Date | null;
 }
 
 export interface ContentCandidate {
@@ -32,6 +35,8 @@ export interface LearnerContext {
   words: Map<string, UserWordState>;
   now: Date;
   lemmaOf?: (vocabId: string) => string | undefined;
+  /** language for human-readable reasons */
+  locale?: Locale;
 }
 
 export type WordBucket = "known" | "learning" | "review" | "new";
@@ -67,23 +72,27 @@ export function scoreContent(c: ContentCandidate, ctx: LearnerContext): Recommen
   const total = Math.max(1, c.vocabIds.length);
   const newRatio = counts.new / total;
   const reasons: string[] = [];
+  const t = (k: string, v?: Record<string, string | number>) => translate(ctx.locale ?? "en", k, v);
   let score = 50;
 
   // Reinforce weak / due vocabulary (capped so one item can't dominate purely on reviews).
   const reviewHits = Math.min(4, counts.review);
   score += reviewHits * 8;
   if (counts.review > 0) {
-    const names = reviewWordIds
+    // Name the words the learner practiced most recently (e.g. just got wrong) first.
+    const recent = (id: string) => ctx.words.get(id)?.lastReviewedAt?.getTime() ?? 0;
+    const names = [...reviewWordIds]
+      .sort((a, b) => recent(b) - recent(a))
       .slice(0, 3)
       .map((id) => ctx.lemmaOf?.(id))
       .filter(Boolean);
-    reasons.push(names.length ? `Reviews words you're practicing: ${names.join(", ")}` : `Reviews ${counts.review} words due for practice`);
+    reasons.push(names.length ? t("Reviews words you're practicing: {words}", { words: names.join(", ") }) : t("Reviews {n} words due for practice", { n: counts.review }));
   }
 
   // Manageable amount of new material.
   if (counts.new > 0 && newRatio <= IDEAL_MAX_NEW_RATIO) {
     score += 6;
-    reasons.push(`Introduces ${counts.new} new word${counts.new === 1 ? "" : "s"}`);
+    reasons.push(t(counts.new === 1 ? "Introduces {n} new word" : "Introduces {n} new words", { n: counts.new }));
   } else if (newRatio > IDEAL_MAX_NEW_RATIO) {
     score -= Math.round((newRatio - IDEAL_MAX_NEW_RATIO) * 60);
   }
@@ -94,14 +103,14 @@ export function scoreContent(c: ContentCandidate, ctx: LearnerContext): Recommen
   // Interests.
   if (ctx.interests.map((i) => i.toLowerCase()).includes(c.genre.toLowerCase())) {
     score += 15;
-    reasons.push(`Matches your interest in ${c.genre}`);
+    reasons.push(t("Matches your interest in {genre}", { genre: t(c.genre) }));
   }
 
   // Level fit: harder-than-level is penalized more than easier.
   const diff = CEFR_LEVELS.indexOf(c.cefr) - CEFR_LEVELS.indexOf(ctx.level);
   if (diff > 0) score -= diff * 14;
   else if (diff < 0) score -= -diff * 6;
-  else reasons.push(`At your level (${ctx.level})`);
+  else reasons.push(t("At your level ({level})", { level: ctx.level }));
 
   if (c.completed) score -= 40;
   if (c.skipped) score -= 25;

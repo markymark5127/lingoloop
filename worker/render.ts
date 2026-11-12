@@ -14,6 +14,9 @@ import path from "node:path";
 import { chromium, type Browser } from "@playwright/test";
 import type { VideoBody } from "../src/lib/content/schemas";
 import type { AIProvider } from "../src/lib/ai/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { cachedSpeak } from "../src/lib/ai/tts-cache";
+import { TARGET_INFO, collapse, displayText, type TargetLang } from "../src/lib/lang";
 
 const run = promisify(execFile);
 const W = 1080;
@@ -42,12 +45,12 @@ export async function closeBrowser() {
   browser = null;
 }
 
-function sceneHtml(scene: VideoBody["scenes"][number], title: string, index: number, total: number) {
+function sceneHtml(scene: VideoBody["scenes"][number], title: string, index: number, total: number, lang: TargetLang) {
   const [a, b] = BACKGROUNDS[scene.bg] ?? BACKGROUNDS.sunset;
   const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
   return `<!doctype html><html><head><meta charset="utf-8"><style>
   *{margin:0;box-sizing:border-box}
-  body{width:${W}px;height:${H}px;overflow:hidden;font-family:"Noto Sans","DejaVu Sans",sans-serif;
+  body{width:${W}px;height:${H}px;overflow:hidden;font-family:"Noto Sans","Noto Sans CJK JP","DejaVu Sans",sans-serif;
     background:radial-gradient(circle at 30% 20%, rgba(255,255,255,.35), transparent 45%), linear-gradient(160deg, ${a}, ${b});
     display:flex;flex-direction:column;align-items:center;color:white}
   .top{margin-top:120px;font-size:38px;font-weight:700;letter-spacing:.08em;opacity:.85;text-transform:uppercase}
@@ -58,7 +61,7 @@ function sceneHtml(scene: VideoBody["scenes"][number], title: string, index: num
   .dot{width:18px;height:18px;border-radius:9px;background:rgba(255,255,255,.4)}
   .dot.on{background:white;width:48px}
   </style></head><body>
-  <div class="top">LingoLoop · Español</div>
+  <div class="top">LingoLoop · ${TARGET_INFO[lang].endonym}</div>
   <div class="title">${esc(title)}</div>
   <div class="emoji">${esc(scene.emoji)}</div>
   <div class="dots">${Array.from({ length: total }, (_, i) => `<div class="dot ${i === index ? "on" : ""}"></div>`).join("")}</div>
@@ -70,9 +73,11 @@ async function probeDuration(file: string) {
   return parseFloat(stdout.trim());
 }
 
-async function narrate(ai: AIProvider, text: string, outBase: string): Promise<string> {
+async function narrate(ai: AIProvider, scene: { text: string; reading?: string }, lang: TargetLang, outBase: string, db?: SupabaseClient): Promise<string> {
+  const text = displayText(scene.text);
   try {
-    const mp3 = await ai.speak(text);
+    // Reuse narration across videos/users: the same sentence is only ever synthesized once.
+    const mp3 = db ? (await cachedSpeak(db, ai, text, lang))?.audio : await ai.speak(text, lang);
     if (mp3) {
       const f = outBase + ".mp3";
       await writeFile(f, mp3);
@@ -82,7 +87,9 @@ async function narrate(ai: AIProvider, text: string, outBase: string): Promise<s
     console.warn("[render] AI TTS failed, falling back to espeak-ng:", (e as Error).message);
   }
   const f = outBase + ".wav";
-  await run("espeak-ng", ["-v", "es", "-s", "135", "-p", "45", "-w", f, text]);
+  // espeak-ng can't read kanji reliably, so Japanese is narrated from its kana reading.
+  const spoken = lang === "ja" && scene.reading ? collapse(scene.reading) : text;
+  await run("espeak-ng", ["-v", TARGET_INFO[lang].espeak, "-s", lang === "ja" ? "150" : "135", "-p", "45", "-w", f, spoken]);
   return f;
 }
 
@@ -104,7 +111,7 @@ export interface RenderResult {
   narration: "openai" | "espeak-ng";
 }
 
-export async function renderVideo(ai: AIProvider, title: string, body: VideoBody, onProgress?: (p: number) => Promise<void>): Promise<RenderResult> {
+export async function renderVideo(ai: AIProvider, title: string, body: VideoBody, onProgress?: (p: number) => Promise<void>, db?: SupabaseClient, lang: TargetLang = "es"): Promise<RenderResult> {
   const dir = await mkdtemp(path.join(tmpdir(), "lingoloop-"));
   try {
     const b = await getBrowser();
@@ -117,14 +124,14 @@ export async function renderVideo(ai: AIProvider, title: string, body: VideoBody
 
     for (let i = 0; i < n; i++) {
       const scene = body.scenes[i];
-      const audio = await narrate(ai, scene.text, path.join(dir, `a${i}`));
+      const audio = await narrate(ai, scene, lang, path.join(dir, `a${i}`), db);
       if (audio.endsWith(".mp3")) narration = "openai";
       const dur = await probeDuration(audio);
       const sceneDur = dur + PAD;
       timings.push({ start: Math.round(t * 1000), end: Math.round((t + dur) * 1000) });
       t += sceneDur;
 
-      await page.setContent(sceneHtml(scene, title, i, n), { waitUntil: "load" });
+      await page.setContent(sceneHtml(scene, title, i, n, lang), { waitUntil: "load" });
       const png = path.join(dir, `f${i}.png`);
       await page.screenshot({ path: png });
 
@@ -157,7 +164,7 @@ export async function renderVideo(ai: AIProvider, title: string, body: VideoBody
 
     const vtt =
       "WEBVTT\n\n" +
-      body.scenes.map((s, i) => `${i + 1}\n${vttTime(timings[i].start / 1000)} --> ${vttTime(timings[i].end / 1000)}\n${s.text}\n`).join("\n");
+      body.scenes.map((s, i) => `${i + 1}\n${vttTime(timings[i].start / 1000)} --> ${vttTime(timings[i].end / 1000)}\n${displayText(s.text)}\n`).join("\n");
 
     return {
       video: await readFile(out),

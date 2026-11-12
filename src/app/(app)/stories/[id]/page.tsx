@@ -8,6 +8,8 @@ import { useActivityTimer } from "@/lib/client/useActivityTimer";
 import { WordTapText } from "@/components/WordTapText";
 import { Quiz, type PublicQuestion } from "@/components/Quiz";
 import { Button, ErrorBox, Spinner } from "@/components/ui";
+import { useT } from "@/lib/i18n/client";
+import { isJapaneseText } from "@/lib/lang";
 
 interface Story {
   id: string;
@@ -17,7 +19,7 @@ interface Story {
   summary: string;
   series: string | null;
   series_order: number | null;
-  body: { characters: string[]; chapters: { title: string; paragraphs: { es: string; en: string }[]; questions: PublicQuestion[] }[] };
+  body: { characters: string[]; chapters: { title: string; paragraphs: { es: string; reading?: string; en: string }[]; questions: PublicQuestion[] }[] };
   progress: { position: number; completed: boolean; bookmarked: boolean } | null;
   next: { id: string; title: string } | null;
 }
@@ -25,6 +27,7 @@ interface Story {
 export default function StoryReader({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   useActivityTimer("story");
+  const t = useT();
   const [story, setStory] = useState<Story | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [chapter, setChapter] = useState(0);
@@ -88,7 +91,7 @@ export default function StoryReader({ params }: { params: Promise<{ id: string }
   }
 
   if (error) return <div className="p-4"><ErrorBox message={error} onRetry={load} /></div>;
-  if (!story) return <div className="grid h-64 place-items-center"><Spinner label="Opening story…" /></div>;
+  if (!story) return <div className="grid h-64 place-items-center"><Spinner label={t("Opening story…")} /></div>;
 
   const ch = story.body.chapters[chapter];
   const last = chapter === story.body.chapters.length - 1;
@@ -96,10 +99,10 @@ export default function StoryReader({ params }: { params: Promise<{ id: string }
   return (
     <article className="mx-auto max-w-2xl px-4 pb-10 pt-4">
       <div className="mb-4 flex items-center justify-between">
-        <Link href="/stories" className="rounded-lg px-2 py-1 text-sm font-medium text-muted hover:text-text">← Stories</Link>
+        <Link href="/stories" className="rounded-lg px-2 py-1 text-sm font-medium text-muted hover:text-text">← {t("Stories")}</Link>
         <div className="flex gap-1">
-          <button onClick={() => setShowEn(!showEn)} aria-pressed={showEn} aria-label="Show English translation" className={`min-h-10 rounded-xl px-3 text-sm font-semibold ${showEn ? "bg-accent-2 text-white" : "bg-surface-2"}`}>EN</button>
-          <button onClick={() => { setBookmarked(!bookmarked); save({ bookmarked: !bookmarked }); }} aria-label={bookmarked ? "Remove bookmark" : "Bookmark story"} aria-pressed={bookmarked} className="min-h-10 rounded-xl bg-surface-2 px-3">
+          <button onClick={() => setShowEn(!showEn)} aria-pressed={showEn} aria-label={t("Show English translation")} className={`min-h-10 rounded-full px-4 text-sm font-semibold ${showEn ? "bg-accent-gradient text-white" : "bg-surface-2"}`}>{t("EN")}</button>
+          <button onClick={() => { setBookmarked(!bookmarked); save({ bookmarked: !bookmarked }); }} aria-label={bookmarked ? t("Remove bookmark") : t("Bookmark story")} aria-pressed={bookmarked} className="min-h-10 rounded-full bg-surface-2 px-3">
             <span className="emoji">{bookmarked ? "🔖" : "📑"}</span>
           </button>
         </div>
@@ -107,40 +110,47 @@ export default function StoryReader({ params }: { params: Promise<{ id: string }
 
       <header className="mb-6">
         <p className="text-sm font-medium text-muted">
-          {story.series && story.series_order ? `${story.series} · Episode ${story.series_order} · ` : ""}
-          {story.cefr} · Chapter {chapter + 1}/{story.body.chapters.length}
+          {story.series && story.series_order ? `${story.series} · ${t("Episode {n}", { n: story.series_order })} · ` : ""}
+          {story.cefr} · {t("Chapter {n}/{total}", { n: chapter + 1, total: story.body.chapters.length })}
         </p>
         <h1 className="mt-1 font-display text-3xl font-extrabold leading-tight">{story.title}</h1>
         <h2 className="mt-1 text-xl font-semibold text-accent">{ch.title}</h2>
       </header>
 
-      <div className="sticky top-14 z-20 -mx-4 mb-6 flex items-center gap-2 bg-bg/90 px-4 py-2 backdrop-blur md:top-0">
+      <div className="sticky top-14 z-20 mb-6 flex items-center gap-2 glass rounded-full px-2 py-2 md:top-4">
         <Button onClick={narrate} className="min-w-36">
-          {reading ? "⏸ Stop" : "🔊 Listen"}
+          {reading ? `⏸ ${t("Stop")}` : `🔊 ${t("Listen")}`}
         </Button>
-        <button onClick={() => setRate(rate === 0.95 ? 0.7 : 0.95)} className="min-h-11 rounded-xl bg-surface-2 px-3 text-sm font-semibold" aria-label="Narration speed">
-          {rate < 0.9 ? "🐢 Slow" : "🐇 Normal"}
+        <button onClick={() => setRate(rate === 0.95 ? 0.7 : 0.95)} className="min-h-11 rounded-full bg-surface-2 px-4 text-sm font-semibold" aria-label={t("Narration speed")}>
+          {rate < 0.9 ? `🐢 ${t("Slow")}` : `🐇 ${t("Normal")}`}
         </button>
-        <span className="text-xs text-muted">Tap any word for its meaning</span>
+        <span className="text-xs text-muted">{t("Tap any word for its meaning")}</span>
       </div>
 
-      <div className="space-y-6 font-serif text-[1.3rem] leading-relaxed">
-        {ch.paragraphs.map((para, pi) => (
-          <div key={pi}>
-            <p>
-              {sentences(para.es).map((s, si) => (
-                <span key={si} className={`rounded transition-colors ${reading?.p === pi && reading.s === si ? "bg-warning/35" : ""}`}>
-                  <WordTapText text={s} />{" "}
-                </span>
-              ))}
-            </p>
-            {showEn && <p className="mt-1 font-sans text-base text-muted">{para.en}</p>}
-          </div>
-        ))}
+      <div className={`space-y-6 font-serif text-[1.3rem] ${isJapaneseText(ch.paragraphs[0]?.es ?? "") ? "leading-[2.3]" : "leading-relaxed"}`}>
+        {ch.paragraphs.map((para, pi) => {
+          const ss = sentences(para.es);
+          const ja = isJapaneseText(para.es);
+          // Readings line up sentence-by-sentence (same punctuation), then word-by-word.
+          const rs = para.reading ? sentences(para.reading) : [];
+          return (
+            <div key={pi}>
+              <p>
+                {ss.map((s, si) => (
+                  <span key={si} className={`rounded transition-colors ${reading?.p === pi && reading.s === si ? "bg-warning/35" : ""}`}>
+                    <WordTapText text={s} reading={rs.length === ss.length ? rs[si] : null} />
+                    {ja ? "" : " "}
+                  </span>
+                ))}
+              </p>
+              {showEn && <p className="mt-1 font-sans text-base leading-relaxed text-muted">{para.en}</p>}
+            </div>
+          );
+        })}
       </div>
 
-      <section className="mt-10 rounded-3xl border border-border bg-surface p-5">
-        <h3 className="mb-4 font-display text-lg font-bold">Comprehension check</h3>
+      <section className="mt-10 glass rounded-[32px] p-5">
+        <h3 className="mb-4 font-display text-lg font-bold">{t("Comprehension check")}</h3>
         <Quiz
           key={chapter}
           contentId={story.id}
@@ -154,16 +164,16 @@ export default function StoryReader({ params }: { params: Promise<{ id: string }
       </section>
 
       <nav className="mt-6 flex gap-3">
-        {chapter > 0 && <Button variant="secondary" onClick={() => goChapter(chapter - 1)}>← Previous</Button>}
-        {!last && <Button className="flex-1" onClick={() => goChapter(chapter + 1)}>Next chapter →</Button>}
+        {chapter > 0 && <Button variant="secondary" onClick={() => goChapter(chapter - 1)}>← {t("Previous")}</Button>}
+        {!last && <Button className="flex-1" onClick={() => goChapter(chapter + 1)}>{t("Next chapter")} →</Button>}
         {last && quizDone && story.next && (
-          <Link href={`/stories/${story.next.id}`} className="flex min-h-11 flex-1 items-center justify-center rounded-xl bg-accent font-semibold text-white">
-            Next episode: {story.next.title} →
+          <Link href={`/stories/${story.next.id}`} className="flex min-h-11 flex-1 items-center justify-center rounded-full bg-accent-gradient font-semibold text-white shadow-lg shadow-accent/30">
+            {t("Next episode: {title}", { title: story.next.title })} →
           </Link>
         )}
         {last && !quizDone && (
           <Button variant="secondary" className="flex-1" onClick={() => save({ completed: true, position: chapter + 1 })}>
-            Mark as finished
+            {t("Mark as finished")}
           </Button>
         )}
       </nav>

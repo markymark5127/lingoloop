@@ -6,6 +6,7 @@ import { api } from "@/lib/client/api";
 import { useActivityTimer } from "@/lib/client/useActivityTimer";
 import { GenerateButton } from "@/components/GenerateButton";
 import { Chip, EmptyState, ErrorBox, Spinner } from "@/components/ui";
+import { useT } from "@/lib/i18n/client";
 
 interface StoryItem {
   id: string;
@@ -27,6 +28,7 @@ const GENRES = ["mystery", "sci-fi", "travel", "comedy", "everyday"];
 export default function StoriesPage() {
   useActivityTimer("story");
   const router = useRouter();
+  const t = useT();
   const [items, setItems] = useState<StoryItem[] | null>(null);
   const [genre, setGenre] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,32 +55,32 @@ export default function StoriesPage() {
     <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl font-extrabold">Stories</h1>
-          <p className="text-muted">Narrated, serialized, and picked for your level.</p>
+          <h1 className="font-display text-4xl font-extrabold">{t("Stories")}</h1>
+          <p className="text-muted">{t("Narrated, serialized, and picked for your level.")}</p>
         </div>
-        <GenerateButton kind="story" genre={genre ?? undefined} label="Write me a story" onReady={(id) => router.push(`/stories/${id}`)} />
+        <GenerateButton kind="story" genre={genre ?? undefined} label={t("Write me a story")} onReady={(id) => router.push(`/stories/${id}`)} />
       </header>
       <div className="flex gap-2 overflow-x-auto no-scrollbar">
-        <Chip active={!genre} onClick={() => setGenre(null)}>All</Chip>
+        <Chip active={!genre} onClick={() => setGenre(null)}>{t("All")}</Chip>
         {GENRES.map((g) => (
           <Chip key={g} active={genre === g} onClick={() => setGenre(g)}>
-            <span className="emoji">{GENRE_ICON[g]}</span> {g}
+            <span className="emoji">{GENRE_ICON[g]}</span> {t(g)}
           </Chip>
         ))}
       </div>
       {error && <ErrorBox message={error} onRetry={load} />}
-      {!items && !error && <Spinner label="Loading stories…" />}
-      {items?.length === 0 && <EmptyState emoji="📚" title="No stories in this genre yet">Generate one written just for you.</EmptyState>}
+      {!items && !error && <Spinner label={t("Loading stories…")} />}
+      {items?.length === 0 && <EmptyState emoji="📚" title={t("No stories in this genre yet")}>{t("Generate one written just for you.")}</EmptyState>}
 
       {continuing.length > 0 && (
         <section className="space-y-3">
-          <h2 className="font-display text-lg font-bold">Continue reading</h2>
+          <h2 className="font-display text-lg font-bold">{t("Continue reading")}</h2>
           {continuing.map((s) => <StoryCard key={s.id} s={s} />)}
         </section>
       )}
       {rest.length > 0 && (
         <section className="space-y-3">
-          <h2 className="font-display text-lg font-bold">Recommended for you</h2>
+          <h2 className="font-display text-lg font-bold">{t("Recommended for you")}</h2>
           {rest.map((s) => <StoryCard key={s.id} s={s} />)}
         </section>
       )}
@@ -87,20 +89,21 @@ export default function StoriesPage() {
 }
 
 function StoryCard({ s }: { s: StoryItem }) {
+  const t = useT();
   const pct = s.progress ? (s.progress.completed ? 100 : Math.round((s.progress.position / s.body.chapters.length) * 100)) : 0;
   return (
-    <Link href={`/stories/${s.id}`} className="group flex gap-4 rounded-2xl border border-border bg-surface p-4 transition hover:-translate-y-0.5 hover:shadow-lg">
-      <div className="grid h-20 w-16 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-accent-2/80 to-accent/80 text-3xl">
+    <Link href={`/stories/${s.id}`} className="group flex gap-4 glass rounded-[28px] p-4 transition hover:-translate-y-0.5 hover:shadow-lg">
+      <div className="grid h-20 w-16 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#d9d4ff] to-[#ffd6e8] dark:from-[#3b2f7a] dark:to-[#5a1f4f] text-3xl">
         <span className="emoji">{GENRE_ICON[s.genre] ?? "📖"}</span>
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted">
           <span className="rounded-full bg-surface-2 px-2 py-0.5">{s.cefr}</span>
-          {s.series && s.series_order && <span>Episode {s.series_order}</span>}
-          <span>{s.body.chapters.length} ch.</span>
+          {s.series && s.series_order && <span>{t("Episode {n}", { n: s.series_order })}</span>}
+          <span>{t("{n} ch.", { n: s.body.chapters.length })}</span>
           {s.progress?.bookmarked && <span>🔖</span>}
-          {s.progress?.completed && <span className="text-success">✓ Read</span>}
-          {s.source !== "starter" && <span className="text-accent">made for you</span>}
+          {s.progress?.completed && <span className="text-success">✓ {t("Read")}</span>}
+          {s.source !== "starter" && <span className="text-accent">{t("made for you")}</span>}
         </div>
         <h3 className="mt-1 font-display text-lg font-bold group-hover:text-accent">{s.title}</h3>
         <p className="line-clamp-2 text-sm text-muted">{s.summary}</p>

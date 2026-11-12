@@ -27,6 +27,8 @@ import {
   CEFR_LEVELS,
 } from "@/lib/engine";
 import type { WordHint } from "@/lib/ai/types";
+import { toLocale, type Locale } from "@/lib/i18n/core";
+import { langOfText, toTarget, type TargetLang } from "@/lib/lang";
 
 export type Activity = "video" | "story" | "game" | "talk" | "review";
 
@@ -41,6 +43,12 @@ export interface VocabRow {
   forms: string[];
   example: string | null;
   example_translation: string | null;
+  language?: string;
+  reading?: string | null;
+  example_reading?: string | null;
+  translation_ja?: string | null;
+  example_translation_ja?: string | null;
+  pitch_accent?: number | null;
 }
 
 export interface UserVocabRow {
@@ -65,6 +73,8 @@ export interface LearningProfile {
   user_id: string;
   native_language: string;
   target_language: string;
+  /** level per target language, e.g. {"es":"A2","ja":"A1"} */
+  levels?: Record<string, string> | null;
   level: Cefr;
   interests: string[];
   daily_goal_minutes: number;
@@ -78,16 +88,28 @@ function must<T>(r: { data: T | null; error: { message: string } | null }, what:
 }
 
 // ------------------------------------------------------------------ vocabulary bank
-let vocabCache: { at: number; rows: VocabRow[] } | null = null;
+const vocabCache = new Map<TargetLang, { at: number; rows: VocabRow[] }>();
 
-export async function loadVocab(db: SupabaseClient, fresh = false): Promise<VocabRow[]> {
-  if (!fresh && vocabCache && Date.now() - vocabCache.at < 60_000) return vocabCache.rows;
-  const rows = must(await db.from("vocabulary_items").select("*").eq("language", "es").limit(5000), "load vocab") as VocabRow[];
-  vocabCache = { at: Date.now(), rows };
+/** The dictionary for one target language (cached for a minute). */
+export async function loadVocab(db: SupabaseClient, lang: TargetLang = "es", fresh = false): Promise<VocabRow[]> {
+  const hit = vocabCache.get(lang);
+  if (!fresh && hit && Date.now() - hit.at < 60_000) return hit.rows;
+  const rows = must(await db.from("vocabulary_items").select("*").eq("language", lang).limit(5000), "load vocab") as VocabRow[];
+  vocabCache.set(lang, { at: Date.now(), rows });
   return rows;
 }
 
-export function toEntry(v: VocabRow): VocabEntry {
+/** The language a learner is currently studying. */
+export const targetOf = (p: Pick<LearningProfile, "target_language">): TargetLang => toTarget(p.target_language);
+
+/** The vocabulary row as seen by a learner who speaks `locale` (falls back to English). */
+export function localizeVocab<T extends Pick<VocabRow, "translation" | "example_translation"> & { translation_ja?: string | null; example_translation_ja?: string | null }>(v: T, locale: Locale): T {
+  if (locale !== "ja") return v;
+  return { ...v, translation: v.translation_ja || v.translation, example_translation: v.example_translation_ja || v.example_translation };
+}
+
+export function toEntry(row: VocabRow, locale: Locale = "en"): VocabEntry {
+  const v = localizeVocab(row, locale);
   return {
     id: v.id,
     lemma: v.lemma,
@@ -97,18 +119,22 @@ export function toEntry(v: VocabRow): VocabEntry {
     pos: v.part_of_speech,
     example: v.example,
     exampleTranslation: v.example_translation,
+    reading: v.reading ?? null,
+    exampleReading: v.example_reading ?? null,
+    accent: v.pitch_accent ?? null,
+    forms: v.forms,
   };
 }
 
-export async function vocabIdsInText(db: SupabaseClient, text: string): Promise<string[]> {
-  const vocab = await loadVocab(db);
+export async function vocabIdsInText(db: SupabaseClient, text: string, lang: TargetLang = langOfText(text)): Promise<string[]> {
+  const vocab = await loadVocab(db, lang);
   const items = vocab.map((v) => ({ id: v.id, lemma: v.lemma, forms: v.forms }));
   return matchVocab(text, items, buildFormIndex(items));
 }
 
 /** Link content to the vocabulary it contains (introduced = not in learner's known set at creation). */
-export async function linkContentVocabulary(db: SupabaseClient, contentId: string, text: string, focusIds: string[] = []) {
-  const ids = await vocabIdsInText(db, text);
+export async function linkContentVocabulary(db: SupabaseClient, contentId: string, text: string, focusIds: string[] = [], lang?: TargetLang) {
+  const ids = await vocabIdsInText(db, text, lang);
   if (!ids.length) return [];
   const focus = new Set(focusIds);
   const rows = ids.map((vocab_id) => ({ content_id: contentId, vocab_id, role: focus.has(vocab_id) ? "reinforced" : "introduced" }));
@@ -133,6 +159,7 @@ export function toWordState(r: UserVocabRow): UserWordState {
     dueAt: r.due_at ? new Date(r.due_at) : null,
     incorrectCount: r.incorrect_count,
     exposures: r.exposures,
+    lastReviewedAt: r.last_reviewed_at ? new Date(r.last_reviewed_at) : null,
   };
 }
 
@@ -246,11 +273,22 @@ export async function recordAnswers(db: SupabaseClient, userId: string, answers:
 }
 
 // ------------------------------------------------------------------ performance & level
-export async function recentAccuracy(db: SupabaseClient, userId: string, n = 40) {
-  const rows = must(
-    await db.from("learning_events").select("correct").eq("user_id", userId).eq("event_type", "answer").order("created_at", { ascending: false }).limit(n),
+export type EventLangRow = { correct?: boolean | null; vocabulary_items?: { language: string } | null; content_items?: { language: string } | null };
+/** Which target language an answer event belongs to (via its word, else its content). */
+export const eventLanguage = (r: EventLangRow): TargetLang => toTarget(r.vocabulary_items?.language ?? r.content_items?.language ?? "es");
+/** Accuracy over the last `n` assessed answers in one target language. */
+export async function recentAccuracy(db: SupabaseClient, userId: string, n = 40, lang: TargetLang = "es") {
+  const all = must(
+    await db
+      .from("learning_events")
+      .select("correct, vocabulary_items(language), content_items(language)")
+      .eq("user_id", userId)
+      .eq("event_type", "answer")
+      .order("created_at", { ascending: false })
+      .limit(n * 4),
     "accuracy",
-  ) as { correct: boolean }[];
+  ) as unknown as EventLangRow[];
+  const rows = all.filter((r) => eventLanguage(r) === lang).slice(0, n) as { correct: boolean }[];
   const total = rows.length;
   const correct = rows.filter((r) => r.correct).length;
   return { accuracy: total ? correct / total : 0, total };
@@ -259,20 +297,25 @@ export async function recentAccuracy(db: SupabaseClient, userId: string, n = 40)
 /** Re-evaluate the learner's band from performance + retention (never from time spent). */
 export async function reassessLevel(db: SupabaseClient, userId: string) {
   const profile = await getProfile(db, userId);
-  const words = await loadUserWordRows(db, userId);
-  const strong = words.filter((w) => overall({ recognition: w.recognition, listening: w.listening, production: w.production }) >= 0.6).length;
-  const { accuracy, total } = await recentAccuracy(db, userId);
+  const lang = targetOf(profile);
+  const [words, vocab] = await Promise.all([loadUserWordRows(db, userId), loadVocab(db, lang)]);
+  const inLang = new Set(vocab.map((v) => v.id));
+  const strong = words.filter((w) => inLang.has(w.vocab_id) && overall({ recognition: w.recognition, listening: w.listening, production: w.production }) >= 0.6).length;
+  const { accuracy, total } = await recentAccuracy(db, userId, 40, lang);
   const decision = suggestLevel({ current: profile.level, strongWords: strong, recentAccuracy: accuracy, recentAnswers: total });
   if (decision.change !== "same") {
-    must(await db.from("learning_profiles").update({ level: decision.level, updated_at: new Date().toISOString() }).eq("user_id", userId), "level");
-    await logEvent(db, userId, { activity: "review", event_type: "level_change", meta: { from: profile.level, to: decision.level, reason: decision.reason } });
+    const levels = { ...(profile.levels ?? {}), [lang]: decision.level };
+    must(await db.from("learning_profiles").update({ level: decision.level, levels, updated_at: new Date().toISOString() }).eq("user_id", userId), "level");
+    await logEvent(db, userId, { activity: "review", event_type: "level_change", meta: { from: profile.level, to: decision.level, reason: decision.reason, language: lang } });
   }
   return decision;
 }
 
 // ------------------------------------------------------------------ personalization
-export async function generationContext(db: SupabaseClient, userId: string, genre?: string) {
-  const [profile, vocab, words] = await Promise.all([getProfile(db, userId), loadVocab(db), loadUserWords(db, userId)]);
+export async function generationContext(db: SupabaseClient, userId: string, genre?: string, langOverride?: TargetLang) {
+  const profile = await getProfile(db, userId);
+  const language = langOverride ?? targetOf(profile);
+  const [vocab, words] = await Promise.all([loadVocab(db, language), loadUserWords(db, userId)]);
   const now = Date.now();
   const scored = vocab
     .map((v) => ({ v, w: words.get(v.id) }))
@@ -288,11 +331,13 @@ export async function generationContext(db: SupabaseClient, userId: string, genr
   const levelIdx = CEFR_LEVELS.indexOf(profile.level);
   const core = vocab.filter((v) => CEFR_LEVELS.indexOf(v.cefr as Cefr) <= levelIdx);
   const pickedFocus = focus.length ? focus : core.filter((v) => v.part_of_speech === "noun" && v.emoji).sort(() => Math.random() - 0.5).slice(0, 3);
-  const hint = (v: VocabRow): WordHint => ({ lemma: v.lemma, translation: v.translation, article: v.article, emoji: v.emoji, pos: v.part_of_speech });
+  const hint = (v: VocabRow): WordHint => ({ lemma: v.lemma, reading: v.reading ?? null, translation: v.translation, translation_ja: v.translation_ja ?? null, article: v.article, emoji: v.emoji, pos: v.part_of_speech });
   return {
     profile,
+    language,
     focusIds: pickedFocus.map((v) => v.id),
     ctx: {
+      language,
       level: profile.level,
       genre: genre ?? profile.interests[0] ?? "comedy",
       interests: profile.interests,
@@ -324,10 +369,13 @@ export interface RankedContentRow {
  * content they're allowed to read.
  */
 export async function rankedContent(userDb: SupabaseClient, adminDb: SupabaseClient, userId: string, kind: "video" | "story", genre?: string) {
+  const profile = await getProfile(adminDb, userId);
+  const lang = targetOf(profile);
   let q = userDb
     .from("content_items")
     .select("id, kind, title, genre, cefr, summary, series, series_order, body, source, created_at, media_assets(kind, public_url, duration_ms, meta), content_vocabulary(vocab_id)")
     .eq("kind", kind)
+    .eq("language", lang)
     .eq("status", "ready")
     .limit(200);
   if (genre) q = q.eq("genre", genre);
@@ -335,10 +383,9 @@ export async function rankedContent(userDb: SupabaseClient, adminDb: SupabaseCli
     media_assets: RankedContentRow["media"];
     content_vocabulary: { vocab_id: string }[];
   })[];
-  const [profile, words, vocab, progressRows] = await Promise.all([
-    getProfile(adminDb, userId),
+  const [words, vocab, progressRows] = await Promise.all([
     loadUserWords(adminDb, userId),
-    loadVocab(adminDb),
+    loadVocab(adminDb, lang),
     userDb.from("content_progress").select("*").eq("user_id", userId),
   ]);
   const progress = new Map(((progressRows.data ?? []) as (RankedContentRow["progress"] & { content_id: string })[]).map((p) => [p.content_id, p]));
@@ -352,7 +399,7 @@ export async function rankedContent(userDb: SupabaseClient, adminDb: SupabaseCli
     completed: progress.get(c.id)?.completed,
     skipped: progress.get(c.id)?.skipped,
   }));
-  const ranked = rankContent(candidates, { level: profile.level, interests: profile.interests, words, now: new Date(), lemmaOf: (id) => lemma.get(id) });
+  const ranked = rankContent(candidates, { level: profile.level, interests: profile.interests, words, now: new Date(), lemmaOf: (id) => lemma.get(id), locale: toLocale(profile.native_language) });
   const byId = new Map(items.map((c) => [c.id, c]));
   return ranked.map((r): RankedContentRow => {
     const c = byId.get(r.id)!;
@@ -360,4 +407,10 @@ export async function rankedContent(userDb: SupabaseClient, adminDb: SupabaseCli
     void _cv;
     return { ...rest, media: media_assets, progress: progress.get(c.id) ?? null, recommendation: { score: r.score, reasons: r.reasons, counts: r.counts, newRatio: r.newRatio } };
   });
+}
+
+/** The learner's UI/translation language (their native language). */
+export async function userLocale(db: SupabaseClient, userId: string): Promise<Locale> {
+  const { data } = await db.from("learning_profiles").select("native_language").eq("user_id", userId).maybeSingle();
+  return toLocale(data?.native_language);
 }

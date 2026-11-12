@@ -2,37 +2,60 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ------------------------------------------------------------------ tokens
+   Soft "liquid glass" system: pastel mesh background, frosted translucent
+   surfaces with bright hairline edges, indigo→violet accents. */
 :root {
-  --bg: #f7f5fb;
-  --surface: #ffffff;
-  --surface-2: #f0edf7;
-  --border: #e4dfef;
-  --text: #17141f;
-  --muted: #6b6480;
-  --accent: #ff4d6d;
-  --accent-2: #7c5cff;
-  --accent-soft: #ffe3e9;
+  --bg: #eef0fb;
+  --mesh-1: #cbbfff;
+  --mesh-2: #b9dcff;
+  --mesh-3: #ffc6e3;
+  --mesh-4: #bff0e6;
+
+  --surface: rgba(255, 255, 255, 0.55);
+  --surface-2: rgba(91, 61, 245, 0.07);
+  --surface-solid: #ffffff;
+  --glass-edge: rgba(255, 255, 255, 0.85);
+  --glass-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.7) inset, 0 12px 40px -12px rgba(76, 60, 170, 0.18);
+  --border: rgba(91, 80, 180, 0.14);
+
+  --text: #15123a;
+  --muted: #6b6a8c;
+  --accent: #5b3df5;
+  --accent-2: #8b5cf6;
+  --accent-3: #4fd1c5;
+  --accent-soft: rgba(91, 61, 245, 0.1);
   --success: #12a150;
-  --success-soft: #dcf7e7;
+  --success-soft: rgba(18, 161, 80, 0.12);
   --danger: #e5484d;
-  --danger-soft: #fde6e7;
-  --warning: #f5a524;
+  --danger-soft: rgba(229, 72, 77, 0.12);
+  --warning: #e08a00;
 }
 
 .dark {
-  --bg: #0d0b14;
-  --surface: #17141f;
-  --surface-2: #211d2c;
-  --border: #2d2839;
-  --text: #f3f0fa;
-  --muted: #a39cb8;
-  --accent: #ff5c7a;
-  --accent-2: #9b82ff;
-  --accent-soft: #3a1622;
+  --bg: #0b0a1a;
+  --mesh-1: #3a2a8a;
+  --mesh-2: #123a6b;
+  --mesh-3: #5a1f4f;
+  --mesh-4: #0f4a46;
+
+  --surface: rgba(28, 25, 58, 0.55);
+  --surface-2: rgba(255, 255, 255, 0.06);
+  --surface-solid: #1a1836;
+  --glass-edge: rgba(255, 255, 255, 0.1);
+  --glass-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.06) inset, 0 16px 48px -16px rgba(0, 0, 0, 0.6);
+  --border: rgba(255, 255, 255, 0.09);
+
+  --text: #f2f0ff;
+  --muted: #a6a3c8;
+  --accent: #8b7bff;
+  --accent-2: #b18cff;
+  --accent-3: #4fd1c5;
+  --accent-soft: rgba(139, 123, 255, 0.16);
   --success: #3ddc84;
-  --success-soft: #0f2e1d;
+  --success-soft: rgba(61, 220, 132, 0.14);
   --danger: #ff6b70;
-  --danger-soft: #3a1416;
+  --danger-soft: rgba(255, 107, 112, 0.14);
   --warning: #ffc04d;
 }
 
@@ -40,46 +63,135 @@
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-solid: var(--surface-solid);
   --color-border: var(--border);
   --color-text: var(--text);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
   --color-accent-2: var(--accent-2);
+  --color-accent-3: var(--accent-3);
   --color-accent-soft: var(--accent-soft);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-warning: var(--warning);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-body);
   --font-display: var(--font-display);
 }
 
-html,
-body {
+/* ------------------------------------------------------------------ base */
+html {
   background: var(--bg);
+}
+body {
+  background: transparent;
   color: var(--text);
 }
 
 body {
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-body), var(--font-jp), "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
+/* Pastel mesh behind everything */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -10%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(45% 50% at 10% 15%, var(--mesh-1), transparent 72%),
+    radial-gradient(48% 48% at 92% 8%, var(--mesh-2), transparent 72%),
+    radial-gradient(42% 48% at 4% 95%, var(--mesh-3), transparent 72%),
+    radial-gradient(50% 48% at 96% 92%, var(--mesh-4), transparent 72%),
+    radial-gradient(35% 35% at 55% 45%, color-mix(in srgb, var(--mesh-1) 45%, transparent), transparent 75%),
+    var(--bg);
+  filter: saturate(115%);
+  animation: mesh-drift 28s ease-in-out infinite alternate;
+}
+
 .font-display {
-  font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-display), var(--font-body), var(--font-jp), "Hiragino Sans", system-ui, sans-serif;
+  letter-spacing: -0.018em;
+}
+:lang(ja) .font-display {
+  letter-spacing: 0;
 }
 
 .emoji {
   font-family: "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
 }
 
+/* ------------------------------------------------------------------ glass */
+@utility glass {
+  background: var(--surface);
+  -webkit-backdrop-filter: blur(24px) saturate(170%);
+  backdrop-filter: blur(24px) saturate(170%);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shadow);
+}
+
+@utility glass-strong {
+  background: color-mix(in srgb, var(--surface-solid) 78%, transparent);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  backdrop-filter: blur(32px) saturate(180%);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shadow);
+}
+
+/* Any translucent surface gets the frosted treatment automatically */
+.bg-surface {
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  backdrop-filter: blur(20px) saturate(160%);
+}
+
+@utility text-gradient {
+  background: linear-gradient(100deg, var(--accent), var(--accent-2) 55%, var(--accent-3));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility bg-accent-gradient {
+  background: linear-gradient(135deg, #5b3df5, #8b5cf6);
+}
+
+/* Iridescent orb used on the dashboard hero */
+.orb {
+  border-radius: 9999px;
+  background:
+    radial-gradient(circle at 30% 28%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 22%),
+    radial-gradient(circle at 70% 75%, rgba(79, 209, 197, 0.85), transparent 45%),
+    radial-gradient(circle at 25% 70%, rgba(255, 160, 220, 0.85), transparent 50%),
+    radial-gradient(circle at 75% 25%, rgba(139, 92, 246, 0.85), transparent 50%),
+    radial-gradient(circle at 50% 50%, #c7d2fe, #a5b4fc 70%);
+  box-shadow:
+    inset -18px -24px 60px rgba(91, 61, 245, 0.35),
+    inset 14px 18px 40px rgba(255, 255, 255, 0.6),
+    0 30px 80px -20px rgba(91, 61, 245, 0.45);
+  animation: orb-float 9s ease-in-out infinite;
+}
+
 /* hide scrollbar for the snap feed */
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { scrollbar-width: none; }
 
+@keyframes mesh-drift {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(-2%, 2%, 0) scale(1.05); }
+}
+@keyframes orb-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-10px) rotate(6deg); }
+}
+@keyframes bubble-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
 @keyframes pop-in {
-  0% { transform: scale(0.85); opacity: 0; }
+  0% { transform: scale(0.9); opacity: 0; }
   100% { transform: scale(1); opacity: 1; }
 }
 @keyframes shake {
@@ -88,18 +200,36 @@ body {
   75% { transform: translateX(6px); }
 }
 @keyframes rise {
-  from { transform: translateY(8px); opacity: 0; }
+  from { transform: translateY(10px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
 .animate-pop { animation: pop-in 0.25s ease-out; }
 .animate-shake { animation: shake 0.3s ease-in-out 2; }
-.animate-rise { animation: rise 0.3s ease-out; }
+.animate-rise { animation: rise 0.35s ease-out both; }
+.animate-bubble { animation: bubble-float 5s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 
+:lang(ja) body { line-break: strict; word-break: normal; overflow-wrap: anywhere; }
+
 :focus-visible {
-  outline: 2px solid var(--accent-2);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Japanese reading aid: romaji/kana above each tappable word */
+.ruby-word {
+  ruby-position: over;
+  ruby-align: center;
+}
+.ruby-word rt {
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  font-size: 0.5em;
+  font-weight: 500;
+  letter-spacing: 0;
+  opacity: 0.7;
+  line-height: 1.1;
+  user-select: none;
 }
