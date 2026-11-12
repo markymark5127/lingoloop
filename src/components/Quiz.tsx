@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { api } from "@/lib/client/api";
 import { Button } from "./ui";
+import { useT } from "@/lib/i18n/client";
 
 export interface PublicQuestion {
   q: string;
@@ -10,6 +11,7 @@ export interface PublicQuestion {
 
 /** Comprehension questions; graded by the server. */
 export function Quiz({ contentId, chapter, questions, onDone }: { contentId: string; chapter?: number; questions: PublicQuestion[]; onDone?: (correct: number, total: number) => void }) {
+  const t = useT();
   const [answers, setAnswers] = useState<number[]>(questions.map(() => -1));
   const [result, setResult] = useState<{ results: { correct: boolean; answer: number }[]; correct: number; total: number } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -52,11 +54,11 @@ export function Quiz({ contentId, chapter, questions, onDone }: { contentId: str
       ))}
       {result ? (
         <p className="animate-rise font-semibold">
-          {result.correct === result.total ? "🎉 Perfect!" : `You got ${result.correct} of ${result.total}.`}
+          {result.correct === result.total ? `🎉 ${t("Perfect!")}` : t("You got {n} of {total}.", { n: result.correct, total: result.total })}
         </p>
       ) : (
         <Button onClick={submit} loading={loading} disabled={answers.some((a) => a < 0)} className="w-full">
-          Check answers
+          {t("Check answers")}
         </Button>
       )}
     </div>

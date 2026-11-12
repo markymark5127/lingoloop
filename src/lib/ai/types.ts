@@ -1,15 +1,21 @@
 import type { ConversationSummary, StoryScript, TutorTurn, VideoScript } from "@/lib/content/schemas";
 import type { Scenario } from "@/lib/content/scenarios";
+import type { TargetLang } from "@/lib/lang";
 
 export interface WordHint {
   lemma: string;
+  /** Japanese: kana reading */
+  reading?: string | null;
   translation: string;
+  translation_ja?: string | null;
   article?: string | null;
   emoji?: string | null;
   pos?: string;
 }
 
 export interface GenerationContext {
+  /** language being learned (defaults to Spanish) */
+  language?: TargetLang;
   level: string;
   genre: string;
   interests: string[];
@@ -38,6 +44,7 @@ export interface Lookup {
   lemma: string;
   translation: string;
   partOfSpeech: string;
+  reading?: string;
 }
 
 export interface AIProvider {
@@ -45,10 +52,10 @@ export interface AIProvider {
   generateVideo(ctx: GenerationContext): Promise<VideoScript>;
   generateStory(ctx: GenerationContext): Promise<StoryScript>;
   chat(input: ChatTurnInput): Promise<TutorTurn>;
-  summarize(input: { scenario: Scenario; level: string; transcript: { role: string; content: string; corrections?: unknown }[] }): Promise<ConversationSummary>;
-  lookup(word: string, sentence: string): Promise<Lookup | null>;
-  translate(text: string): Promise<string | null>;
+  summarize(input: { scenario: Scenario; level: string; nativeLanguage?: string; transcript: { role: string; content: string; corrections?: unknown }[] }): Promise<ConversationSummary>;
+  lookup(word: string, sentence: string, nativeLanguage?: string, lang?: TargetLang): Promise<Lookup | null>;
+  translate(text: string, lang?: TargetLang): Promise<string | null>;
   /** returns audio bytes (mp3) or null if unsupported */
-  speak(text: string): Promise<Buffer | null>;
-  transcribe(audio: File): Promise<string | null>;
+  speak(text: string, lang?: TargetLang): Promise<Buffer | null>;
+  transcribe(audio: File, lang?: TargetLang): Promise<string | null>;
 }

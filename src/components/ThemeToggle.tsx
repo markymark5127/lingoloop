@@ -1,7 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Moon, Sun } from "lucide-react";
+import { useT } from "@/lib/i18n/client";
 
 export function ThemeToggle() {
+  const t = useT();
   const [dark, setDark] = useState<boolean | null>(null);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- read theme applied by the pre-paint script
   useEffect(() => setDark(document.documentElement.classList.contains("dark")), []);
@@ -13,11 +16,10 @@ export function ThemeToggle() {
       localStorage.setItem("theme", next ? "dark" : "light");
     } catch {}
   }
+  const Icon = dark ? Moon : Sun;
   return (
-    <button onClick={toggle} aria-label={dark ? "Switch to light theme" : "Switch to dark theme"} className="grid h-10 w-10 place-items-center rounded-full hover:bg-surface-2">
-      <span className="emoji" aria-hidden>
-        {dark === null ? "🌓" : dark ? "🌙" : "☀️"}
-      </span>
+    <button onClick={toggle} aria-label={dark ? t("Switch to light theme") : t("Switch to dark theme")} className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-muted transition hover:bg-surface-2 hover:text-text">
+      <Icon className="h-5 w-5" strokeWidth={1.9} aria-hidden />
     </button>
   );
 }

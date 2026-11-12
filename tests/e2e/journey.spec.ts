@@ -36,7 +36,7 @@ async function onboard(p: Page) {
   await p.getByRole("button", { name: "Continue" }).click();
   await p.getByRole("button", { name: /^10/ }).click();
   await p.getByRole("button", { name: "Start learning" }).click();
-  await p.waitForURL("**/videos");
+  await p.waitForURL("**/home");
 }
 
 test.beforeAll(async ({ browser }) => {
@@ -55,6 +55,8 @@ test("1. sign up with real auth and 2. complete onboarding", async () => {
 });
 
 test("3. watch a playable video and interact with its vocabulary", async () => {
+  await expect(page.getByRole("heading", { name: /Your next adventure/ })).toBeVisible();
+  await page.goto("/videos");
   const video = page.locator("video").first();
   await expect(video).toBeVisible();
   // Real media: the browser must load metadata with a real duration.
@@ -92,6 +94,11 @@ test("4. read a story, play narration and bookmark progress", async () => {
   await page.goto("/stories");
   await page.getByRole("link", { name: /El misterio del café/ }).first().click();
   await expect(page.getByRole("heading", { name: "El misterio del café" })).toBeVisible();
+  // Headless Chromium has no Spanish voice, so the browser voice "finishes" instantly. Give it a
+  // voice that takes real time so the narrating state is observable.
+  await page.evaluate(() => {
+    speechSynthesis.speak = (u: SpeechSynthesisUtterance) => void setTimeout(() => u.onend?.(new Event("end") as SpeechSynthesisEvent), 2500);
+  });
   await page.getByRole("button", { name: /Listen/ }).click();
   await expect(page.getByRole("button", { name: /Stop/ })).toBeVisible();
   await page.getByRole("button", { name: /Stop/ }).click();
@@ -134,7 +141,7 @@ test("5. complete several mini-games with server-validated feedback", async () =
         await page.waitForTimeout(900);
       }
     }
-    await expect(page.getByText(/¡Correcto!|Not quite/)).toBeVisible();
+    await expect(page.getByText(/¡Correcto!|¡Casi!/)).toBeVisible();
     await page.getByRole("button", { name: /Next challenge/ }).waitFor();
   }
   // Secret answers are never sent to the browser.
@@ -152,10 +159,10 @@ test("6. start a conversation and exchange messages (7. voice path + feedback)",
   await page.getByRole("button", { name: /At a restaurant/ }).click();
   await page.waitForURL(/\/talk\/[0-9a-f-]+$/);
   conversationId = page.url().split("/").pop()!;
-  await expect(page.getByText("¿Qué quieres comer hoy?", { exact: false })).toBeVisible();
+  await expect(page.getByText("¿Qué te apetece comer hoy?", { exact: false })).toBeVisible();
   await page.getByLabel("Message").fill("Quiero una pizza y agua, por favor");
   await page.getByRole("button", { name: "Send" }).click();
-  await expect(page.locator("div.bg-surface-2").filter({ hasText: /beber|Muy bien|pizza/i }).last()).toBeVisible();
+  await expect(page.getByTestId("ai-message").filter({ hasText: /beber|Muy bien|pizza/i }).last()).toBeVisible();
   // Voice-originated message (transcript sent with viaVoice=true, as the mic button does).
   const voice = await page.request.post(`/api/conversations/${conversationId}/messages`, { data: { content: "yo es estudiante y mi gusta el café", viaVoice: true } });
   expect(voice.ok()).toBe(true);
@@ -193,7 +200,7 @@ test("9. log out and back in without losing progress", async () => {
   await page.getByLabel("Email").fill(userA.email);
   await page.getByLabel("Password").fill(userA.password);
   await page.getByRole("button", { name: "Log in" }).click();
-  await page.waitForURL("**/videos");
+  await page.waitForURL("**/home");
   const p = await (await page.request.get("/api/progress")).json();
   expect(p.vocabulary.counts.seen).toBe(vocabSeenBeforeLogout);
 });

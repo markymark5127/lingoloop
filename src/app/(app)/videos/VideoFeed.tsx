@@ -7,9 +7,15 @@ import { WordTapText } from "@/components/WordTapText";
 import { Quiz, type PublicQuestion } from "@/components/Quiz";
 import { GenerateButton } from "@/components/GenerateButton";
 import { Chip, EmptyState, ErrorBox, Spinner } from "@/components/ui";
+import { useT } from "@/lib/i18n/client";
+import { TARGET_INFO } from "@/lib/lang";
+import { useTarget } from "@/lib/lang/client";
+
+const WHAT_HAPPENED = { es: "¿Qué pasó?", ja: "どんな話でしたか？" } as const;
 
 interface Scene {
   text: string;
+  reading?: string;
   translation: string;
   emoji: string;
 }
@@ -29,6 +35,7 @@ interface VideoItem {
 const GENRES = ["comedy", "mystery", "sci-fi", "travel", "food", "everyday"];
 
 export function VideoFeed() {
+  const t = useT();
   useActivityTimer("video");
   const params = useSearchParams();
   const router = useRouter();
@@ -77,14 +84,14 @@ export function VideoFeed() {
   const next = (i: number) => scroller.current?.querySelector(`[data-index="${i + 1}"]`)?.scrollIntoView({ behavior: "smooth" });
 
   return (
-    <div className="relative h-dvh bg-black text-white">
+    <div className="relative h-dvh bg-black text-white md:m-4 md:h-[calc(100dvh-2rem)] md:overflow-hidden md:rounded-[32px] md:shadow-2xl md:shadow-accent/20">
       <div className="absolute inset-x-0 top-0 z-20 flex gap-2 overflow-x-auto bg-gradient-to-b from-black/70 to-transparent px-3 pb-6 pt-3 no-scrollbar">
         <Chip active={!genre} onClick={() => setGenre(null)} className={!genre ? "" : "!bg-white/15 !text-white"}>
-          For you
+          {t("For you")}
         </Chip>
         {GENRES.map((g) => (
           <Chip key={g} active={genre === g} onClick={() => setGenre(g)} className={genre === g ? "" : "!bg-white/15 !text-white"}>
-            {g}
+            {t(g)}
           </Chip>
         ))}
       </div>
@@ -96,30 +103,30 @@ export function VideoFeed() {
       )}
       {!items && !error && (
         <div className="grid h-full place-items-center">
-          <Spinner label="Loading your feed…" />
+          <Spinner label={t("Loading your feed…")} />
         </div>
       )}
 
       <div ref={scroller} className="h-full snap-y snap-mandatory overflow-y-scroll no-scrollbar">
         {items?.map((item, i) => (
-          <section key={item.id} data-index={i} className="relative flex h-dvh snap-start snap-always items-center justify-center">
+          <section key={item.id} data-index={i} className="relative flex h-full snap-start snap-always items-center justify-center">
             <VideoCard item={item} active={i === active} onNext={() => next(i)} />
           </section>
         ))}
         {items && (
-          <section data-index={items.length} className="flex h-dvh snap-start flex-col items-center justify-center gap-4 px-8 text-center">
+          <section data-index={items.length} className="flex h-full snap-start flex-col items-center justify-center gap-4 px-8 text-center">
             {items.length === 0 ? (
-              <EmptyState emoji="🎬" title="No videos here yet">
-                <span className="text-white/70">Generate one made just for you.</span>
+              <EmptyState emoji="🎬" title={t("No videos here yet")}>
+                <span className="text-white/70">{t("Generate one made just for you.")}</span>
               </EmptyState>
             ) : (
               <>
                 <div className="emoji text-6xl">✨</div>
-                <h2 className="font-display text-2xl font-bold">You&apos;re all caught up</h2>
-                <p className="max-w-xs text-white/70">Generate a fresh video written around your interests and the words you&apos;re practicing.</p>
+                <h2 className="font-display text-2xl font-bold">{t("You're all caught up")}</h2>
+                <p className="max-w-xs text-white/70">{t("Generate a fresh video written around your interests and the words you're practicing.")}</p>
               </>
             )}
-            <GenerateButton kind="video" genre={genre ?? undefined} label="Make me a new video" onReady={(id) => router.push(`/videos?start=${id}`)} />
+            <GenerateButton kind="video" genre={genre ?? undefined} label={t("Make me a new video")} onReady={(id) => router.push(`/videos?start=${id}`)} />
           </section>
         )}
       </div>
@@ -128,6 +135,8 @@ export function VideoFeed() {
 }
 
 function VideoCard({ item, active, onNext }: { item: VideoItem; active: boolean; onNext: () => void }) {
+  const tr = useT();
+  const lang = useTarget();
   const ref = useRef<HTMLVideoElement>(null);
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -196,7 +205,7 @@ function VideoCard({ item, active, onNext }: { item: VideoItem; active: boolean;
   }
 
   return (
-    <div className="relative h-full w-full max-w-[min(100vw,calc(100dvh*9/16))] overflow-hidden md:h-[94dvh] md:rounded-3xl">
+    <div className="relative h-full w-full max-w-[min(100vw,calc(100dvh*9/16))] overflow-hidden md:h-[calc(100%-2rem)] md:rounded-[28px]">
       <video
         ref={ref}
         src={src}
@@ -214,11 +223,11 @@ function VideoCard({ item, active, onNext }: { item: VideoItem; active: boolean;
         className="h-full w-full cursor-pointer object-cover"
         aria-label={`Video: ${item.title}`}
       >
-        <track kind="captions" srcLang="es" label="Español" src={item.media.find((m) => m.kind === "subtitles")?.public_url ?? undefined} />
+        <track kind="captions" srcLang={lang} label={TARGET_INFO[lang].endonym} src={item.media.find((m) => m.kind === "subtitles")?.public_url ?? undefined} />
       </video>
 
       {(blocked || (!playing && !ended)) && (
-        <button onClick={toggle} className="absolute inset-0 grid place-items-center bg-black/20" aria-label="Play">
+        <button onClick={toggle} className="absolute inset-0 grid place-items-center bg-black/20" aria-label={tr("Play video")}>
           <span className="grid h-20 w-20 place-items-center rounded-full bg-white/90 text-3xl text-black shadow-xl">▶</span>
         </button>
       )}
@@ -234,6 +243,7 @@ function VideoCard({ item, active, onNext }: { item: VideoItem; active: boolean;
           <div key={sceneIdx} data-testid="caption" className="animate-rise mx-auto max-w-md rounded-2xl bg-black/55 px-4 py-3 text-center backdrop-blur">
             <WordTapText
               text={scene.text}
+              reading={scene.reading}
               className={`block font-display text-2xl font-bold leading-snug transition ${speaking ? "text-white" : "text-white/85"}`}
               onLookup={() => ref.current?.pause()}
             />
@@ -244,36 +254,36 @@ function VideoCard({ item, active, onNext }: { item: VideoItem; active: boolean;
 
       {/* Side actions */}
       <div className="absolute bottom-40 right-2 flex flex-col items-center gap-3 md:bottom-32">
-        <Action label={liked ? "Unlike" : "Like"} icon={liked ? "❤️" : "🤍"} onClick={() => { setLiked(!liked); progress({ liked: !liked }); }} />
-        <Action label={bookmarked ? "Remove bookmark" : "Bookmark"} icon={bookmarked ? "🔖" : "📑"} onClick={() => { setBookmarked(!bookmarked); progress({ bookmarked: !bookmarked }); }} />
-        <Action label="Repeat sentence" icon="🔁" onClick={replayLine} />
-        <Action label={slow ? "Normal speed" : "Slow down"} icon={slow ? "🐢" : "🐇"} active={slow} onClick={() => setSlow(!slow)} />
-        <Action label={showEn ? "Hide translation" : "Show translation"} icon="🌐" active={showEn} onClick={() => setShowEn(!showEn)} />
-        <Action label="Skip" icon="⏭️" onClick={() => { progress({ skipped: true }); onNext(); }} />
+        <Action label={liked ? tr("Unlike") : tr("Like")} icon={liked ? "❤️" : "🤍"} onClick={() => { setLiked(!liked); progress({ liked: !liked }); }} />
+        <Action label={bookmarked ? tr("Remove bookmark") : tr("Bookmark")} icon={bookmarked ? "🔖" : "📑"} onClick={() => { setBookmarked(!bookmarked); progress({ bookmarked: !bookmarked }); }} />
+        <Action label={tr("Repeat sentence")} icon="🔁" onClick={replayLine} />
+        <Action label={slow ? tr("Normal speed") : tr("Slow down")} icon={slow ? "🐢" : "🐇"} active={slow} onClick={() => setSlow(!slow)} />
+        <Action label={showEn ? tr("Hide translation") : tr("Show translation")} icon="🌐" active={showEn} onClick={() => setShowEn(!showEn)} />
+        <Action label={tr("Skip")} icon="⏭️" onClick={() => { progress({ skipped: true }); onNext(); }} />
       </div>
 
       {/* Bottom meta */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-4 pb-20 pt-10 md:pb-5">
         <p className="font-display text-lg font-bold">{item.title}</p>
         <p className="text-sm text-white/70">
-          {item.genre} · {item.cefr}
-          {item.source !== "starter" && " · made for you"}
+          {tr(item.genre)} · {item.cefr}
+          {item.source !== "starter" && ` · ${tr("made for you")}`}
         </p>
       </div>
 
       {ended && !quiz && (
         <div className="animate-pop absolute inset-x-4 bottom-28 rounded-3xl bg-white p-5 text-black shadow-2xl md:bottom-10">
-          <p className="font-display text-lg font-bold">Nice! Quick check?</p>
-          <p className="text-sm text-neutral-600">{item.body.questions.length} questions about what happened.</p>
+          <p className="font-display text-lg font-bold">{tr("Nice! Quick check?")}</p>
+          <p className="text-sm text-neutral-600">{tr("{n} questions about what happened.", { n: item.body.questions.length })}</p>
           <div className="mt-4 flex gap-2">
             <button onClick={() => setQuiz(true)} className="min-h-11 flex-1 rounded-xl bg-[#ff4d6d] font-semibold text-white">
-              Answer
+              {tr("Answer")}
             </button>
             <button onClick={replayLine} className="min-h-11 rounded-xl bg-neutral-100 px-4 font-semibold">
-              Replay
+              {tr("Replay")}
             </button>
             <button onClick={onNext} className="min-h-11 rounded-xl bg-neutral-100 px-4 font-semibold">
-              Next
+              {tr("Next")}
             </button>
           </div>
         </div>
@@ -282,14 +292,14 @@ function VideoCard({ item, active, onNext }: { item: VideoItem; active: boolean;
         <div className="absolute inset-0 z-10 overflow-y-auto bg-black/70 p-4 backdrop-blur" onClick={(e) => e.stopPropagation()}>
           <div className="animate-pop mx-auto mt-16 max-w-md rounded-3xl bg-surface p-5 text-text">
             <div className="mb-4 flex items-center justify-between">
-              <p className="font-display text-lg font-bold">¿Qué pasó?</p>
-              <button onClick={() => setQuiz(false)} aria-label="Close quiz" className="text-muted">
+              <p className="font-display text-lg font-bold">{WHAT_HAPPENED[lang]}</p>
+              <button onClick={() => setQuiz(false)} aria-label={tr("Close quiz")} className="text-muted">
                 ✕
               </button>
             </div>
             <Quiz contentId={item.id} questions={item.body.questions} />
             <button onClick={() => { setQuiz(false); onNext(); }} className="mt-3 min-h-11 w-full rounded-xl bg-surface-2 font-semibold">
-              Next video ↓
+              {tr("Next video")} ↓
             </button>
           </div>
         </div>

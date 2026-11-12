@@ -28,11 +28,11 @@ export const POST = route(async (req, ctx: { params: Promise<{ id: string }> }) 
 
   const since = new Date(Date.now() - 86400000).toISOString();
   const { count } = await admin.from("conversation_messages").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("role", "user").gte("created_at", since);
-  if ((count ?? 0) >= DAILY_LIMIT) throw new HttpError(429, "Daily conversation limit reached. Come back tomorrow!");
+  if ((count ?? 0) >= DAILY_LIMIT) throw new HttpError(429, "Daily conversation limit reached. Come back tomorrow!"); // translated client-side
 
   const { data: history } = await admin.from("conversation_messages").select("role, content").eq("session_id", id).order("created_at");
   const turnIndex = (history ?? []).filter((m) => m.role === "user").length;
-  const { ctx: gen, profile } = await generationContext(admin, user.id);
+  const { ctx: gen, profile } = await generationContext(admin, user.id, undefined, scenario.language);
 
   const turn = await ai().chat({
     scenario,
@@ -52,13 +52,13 @@ export const POST = route(async (req, ctx: { params: Promise<{ id: string }> }) 
     .single();
   const { data: reply } = await admin
     .from("conversation_messages")
-    .insert({ session_id: id, user_id: user.id, role: "assistant", content: turn.reply, translation: turn.translation })
-    .select("id, role, content, translation, created_at")
+    .insert({ session_id: id, user_id: user.id, role: "assistant", content: turn.reply, reading: turn.reading ?? null, translation: turn.translation })
+    .select("id, role, content, reading, translation, created_at")
     .single();
   await admin.from("conversation_sessions").update({ updated_at: new Date().toISOString() }).eq("id", id);
 
   // Shared learner model updates.
-  const used = await vocabIdsInText(admin, b.content);
+  const used = await vocabIdsInText(admin, b.content, scenario.language);
   const flagged = normalize(turn.corrections.map((c) => c.original).join(" "));
   const vocabRows = used.length ? (await admin.from("vocabulary_items").select("id, lemma").in("id", used)).data ?? [] : [];
   await recordAnswers(
@@ -69,7 +69,7 @@ export const POST = route(async (req, ctx: { params: Promise<{ id: string }> }) 
     null,
     { session_id: id, via_voice: b.viaVoice },
   );
-  const heard = await vocabIdsInText(admin, turn.reply);
+  const heard = await vocabIdsInText(admin, turn.reply, scenario.language);
   if (heard.length) await recordExposure(admin, user.id, heard, "listening", "talk");
   await logEvent(admin, user.id, { activity: "talk", event_type: b.viaVoice ? "voice_message" : "message", meta: { session_id: id, words_used: used.length } });
 

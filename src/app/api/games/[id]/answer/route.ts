@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { route, requireUser, parseJson, rateLimit, HttpError } from "@/lib/api/http";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { loadVocab, reassessLevel, recordAnswers } from "@/lib/learning/service";
+import { getProfile, loadVocab, reassessLevel, recordAnswers, targetOf } from "@/lib/learning/service";
 import { GAME_SKILL, GAME_WEIGHT, checkPair, label, validate, type BuiltGame, type GameType } from "@/lib/engine";
 
 const Body = z.object({
@@ -52,15 +52,16 @@ export const POST = route(async (req, ctx: { params: Promise<{ id: string }> }) 
     { game_id: id, game_type: type },
   );
   const level = await reassessLevel(admin, user.id);
-  const vocab = await loadVocab(admin);
+  // Immersion: feedback is the word itself (picture + reading), never a translation.
+  const vocab = await loadVocab(admin, targetOf(await getProfile(admin, user.id)));
   const byId = new Map(vocab.map((x) => [x.id, x]));
   const focus = byId.get(g.vocab_ids[0]);
   const expectedVocab = typeof v.expected === "string" ? byId.get(v.expected) : undefined;
   return {
     correct,
     expected: v.expected,
-    answerText: g.game_type === "story_challenge" ? (g.payload.options as string[])[Number(v.expected)] : expectedVocab ? `${expectedVocab.lemma} — ${expectedVocab.translation}` : typeof v.expected === "string" ? v.expected : null,
-    focus: focus ? { lemma: focus.lemma, translation: focus.translation, emoji: focus.emoji } : null,
+    answerText: g.game_type === "pitch_accent" ? null : g.game_type === "story_challenge" ? (g.payload.options as string[])[Number(v.expected)] : expectedVocab ? `${expectedVocab.emoji ? `${expectedVocab.emoji} ` : ""}${expectedVocab.lemma}` : typeof v.expected === "string" ? v.expected : null,
+    focus: focus ? { lemma: focus.lemma, reading: focus.reading ?? null, emoji: focus.emoji } : null,
     mastery: rows.slice(0, 3).map((r) => ({ lemma: byId.get(r.vocab_id)?.lemma, skill, value: r[skill], label: label(r[skill]) })),
     level,
   };
