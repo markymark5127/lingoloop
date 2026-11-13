@@ -141,6 +141,7 @@ function VideoCard({ item, active, onNext }: { item: VideoItem; active: boolean;
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [blocked, setBlocked] = useState(false);
+  const [muted, setMuted] = useState(false);
   const [slow, setSlow] = useState(false);
   const [showEn, setShowEn] = useState(false);
   const [liked, setLiked] = useState(!!item.progress?.liked);
@@ -165,18 +166,38 @@ function VideoCard({ item, active, onNext }: { item: VideoItem; active: boolean;
 
   const progress = useCallback((patch: Record<string, boolean>) => api(`/api/content/${item.id}/progress`, { method: "POST", json: patch }).catch(() => {}), [item.id]);
 
+  /**
+   * Start playback. Browsers (especially on phones) often block autoplay with sound until the user
+   * taps; when that happens, play muted like TikTok does and offer a "tap for sound" button.
+   */
+  const start = useCallback((v: HTMLVideoElement) => {
+    v.play().then(
+      () => setBlocked(false),
+      () => {
+        if (v.muted) return setBlocked(true);
+        v.muted = true;
+        setMuted(true);
+        v.play().then(
+          () => setBlocked(false),
+          () => setBlocked(true),
+        );
+      },
+    );
+  }, []);
+
+  function unmute() {
+    const v = ref.current!;
+    v.muted = false;
+    setMuted(false);
+    if (v.paused) start(v);
+  }
+
   useEffect(() => {
     const v = ref.current;
     if (!v) return;
-    if (active) {
-      v.play().then(
-        () => setBlocked(false),
-        () => setBlocked(true),
-      );
-    } else {
-      v.pause();
-    }
-  }, [active]);
+    if (active) start(v);
+    else v.pause();
+  }, [active, start]);
 
   useEffect(() => {
     if (ref.current) ref.current.playbackRate = slow ? 0.7 : 1;
@@ -184,7 +205,9 @@ function VideoCard({ item, active, onNext }: { item: VideoItem; active: boolean;
 
   function toggle() {
     const v = ref.current!;
-    if (v.paused) v.play().then(() => setBlocked(false)).catch(() => setBlocked(true));
+    // A tap on a muted video turns the sound on instead of pausing it.
+    if (v.muted && !v.paused) return unmute();
+    if (v.paused) start(v);
     else v.pause();
   }
 
@@ -232,15 +255,28 @@ function VideoCard({ item, active, onNext }: { item: VideoItem; active: boolean;
         </button>
       )}
 
+      {muted && playing && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            unmute();
+          }}
+          className="absolute left-1/2 top-[6.5rem] z-10 -translate-x-1/2 rounded-full bg-black/60 px-4 py-2 text-sm font-semibold backdrop-blur"
+        >
+          🔇 {tr("Tap for sound")}
+        </button>
+      )}
+
       {/* Top info */}
       <div className="pointer-events-none absolute inset-x-0 top-[4.25rem] px-4">
         {item.recommendation.reasons[0] && <p className="inline-block rounded-full bg-black/40 px-3 py-1 text-xs font-medium backdrop-blur">🎯 {item.recommendation.reasons[0]}</p>}
       </div>
 
-      {/* Captions */}
-      <div className="absolute inset-x-0 bottom-36 px-4 md:bottom-28" onClick={(e) => e.stopPropagation()}>
+      {/* Captions. AI-generated clips sometimes come with burned-in subtitles in the lower third;
+          this near-opaque box sits over that band so only our tap-to-translate captions show. */}
+      <div className="absolute inset-x-0 bottom-[13%] px-3" onClick={(e) => e.stopPropagation()}>
         {scene && (
-          <div key={sceneIdx} data-testid="caption" className="animate-rise mx-auto max-w-md rounded-2xl bg-black/55 px-4 py-3 text-center backdrop-blur">
+          <div key={sceneIdx} data-testid="caption" className="animate-rise mx-auto flex min-h-[8.5rem] w-full max-w-lg flex-col justify-center rounded-2xl bg-black/95 px-4 py-3 text-center backdrop-blur">
             <WordTapText
               text={scene.text}
               reading={scene.reading}
