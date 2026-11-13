@@ -12,6 +12,7 @@ const Body = z.object({
   fresh: z.boolean().optional(),
 });
 const DAILY_LIMIT = Number(process.env.DAILY_GENERATION_LIMIT ?? 10);
+const DAILY_VIDEO_LIMIT = Number(process.env.DAILY_VIDEO_GENERATION_LIMIT ?? 3);
 
 /**
  * "Make me something new".
@@ -30,13 +31,22 @@ export const POST = route(async (req) => {
   const lang = targetOf(profile);
 
   if (!b.fresh) {
-    const hit = await findInLibrary(admin, user.id, b.kind, lang, profile.level, b.genre ? [b.genre] : profile.interests);
+    const hit =
+      (await findInLibrary(admin, user.id, b.kind, lang, profile.level, b.genre ? [b.genre] : profile.interests)) ??
+      // No match in their interests? Any unseen item at their level beats paying for a new one
+      // (only when they didn't explicitly pick a genre).
+      (!b.genre ? await findInLibrary(admin, user.id, b.kind, lang, profile.level, []) : null);
     if (hit) return { reused: true, contentId: hit.id, title: hit.title };
   }
 
   const since = new Date(Date.now() - 86400000).toISOString();
   const { count } = await admin.from("generation_jobs").select("id", { count: "exact", head: true }).eq("user_id", user.id).gte("created_at", since);
   if ((count ?? 0) >= DAILY_LIMIT) throw new HttpError(429, t("Daily generation limit reached ({n}). Try again tomorrow.", { n: DAILY_LIMIT }));
+  if (b.kind === "video") {
+    // AI video clips cost real money per second, so new videos get a tighter daily cap.
+    const { count: videos } = await admin.from("generation_jobs").select("id", { count: "exact", head: true }).eq("user_id", user.id).eq("kind", "video").gte("created_at", since);
+    if ((videos ?? 0) >= DAILY_VIDEO_LIMIT) throw new HttpError(429, t("Daily generation limit reached ({n}). Try again tomorrow.", { n: DAILY_VIDEO_LIMIT }));
+  }
   const { data: active } = await admin.from("generation_jobs").select("id, kind, status, progress, error, content_id, input").eq("user_id", user.id).in("status", ["queued", "running"]).limit(3);
   // Same request already in flight for this learner? Hand back that job instead of paying twice.
   const same = active?.find((j) => j.kind === b.kind && ((j as { input?: { language?: string } }).input?.language ?? "es") === lang);

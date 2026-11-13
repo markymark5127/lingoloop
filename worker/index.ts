@@ -9,6 +9,7 @@ import { createProvider } from "../src/lib/ai/factory";
 import { StoryScript, VideoBody, VideoScript, checkTargetText } from "../src/lib/content/schemas";
 import { generationContext, linkContentVocabulary } from "../src/lib/learning/service";
 import { closeBrowser, renderVideo } from "./render";
+import { assertImagineConfigured, imagineEnabled, imagineVoice } from "./imagine";
 import { toTarget } from "../src/lib/lang";
 
 loadEnv({ path: ".env.local" });
@@ -42,10 +43,10 @@ async function upload(path: string, data: Buffer | string, contentType: string) 
 
 /** Render an existing video content item and store its media. */
 async function renderContent(jobId: string, contentId: string) {
-  const { data: item, error } = await db.from("content_items").select("id, title, body, language").eq("id", contentId).single();
+  const { data: item, error } = await db.from("content_items").select("id, title, body, language, genre").eq("id", contentId).single();
   if (error || !item) throw new Error(`content ${contentId} not found`);
   const body = VideoBody.parse(item.body);
-  const result = await renderVideo(ai, item.title, body, (p) => setJob(jobId, { progress: p }), db, toTarget(item.language));
+  const result = await renderVideo(ai, item.title, body, (p) => setJob(jobId, { progress: p }), db, toTarget(item.language), item.genre);
   const base = `videos/${contentId}`;
   const [videoUrl, posterUrl, vttUrl] = await Promise.all([
     upload(`${base}/video.mp4`, result.video, "video/mp4"),
@@ -54,7 +55,7 @@ async function renderContent(jobId: string, contentId: string) {
   ]);
   await db.from("media_assets").delete().eq("content_id", contentId);
   const { error: mErr } = await db.from("media_assets").insert([
-    { content_id: contentId, kind: "video", storage_path: `${base}/video.mp4`, public_url: videoUrl, mime_type: "video/mp4", duration_ms: result.durationMs, meta: { narration: result.narration } },
+    { content_id: contentId, kind: "video", storage_path: `${base}/video.mp4`, public_url: videoUrl, mime_type: "video/mp4", duration_ms: result.durationMs, meta: { narration: result.narration, visuals: result.visuals } },
     { content_id: contentId, kind: "poster", storage_path: `${base}/poster.jpg`, public_url: posterUrl, mime_type: "image/jpeg", meta: {} },
     { content_id: contentId, kind: "subtitles", storage_path: `${base}/captions.vtt`, public_url: vttUrl, mime_type: "text/vtt", meta: {} },
   ]);
@@ -123,7 +124,8 @@ async function tick(): Promise<boolean> {
 }
 
 async function main() {
-  console.log(`[worker] started (AI: ${ai.name}${once ? ", --once" : ""})`);
+  if (imagineEnabled()) assertImagineConfigured();
+  console.log(`[worker] started (AI: ${ai.name}, visuals: ${imagineEnabled() ? "grok imagine" : "emoji cards"}, voice: ${imagineVoice() ? "characters speak (grok imagine)" : "tts voice-over"}${once ? ", --once" : ""})`);
   for (;;) {
     const worked = await tick();
     if (!worked) {
