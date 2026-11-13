@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { GENRES } from "@/lib/content/schemas";
 import { getProfile, targetOf } from "@/lib/learning/service";
 import { makeT, toLocale } from "@/lib/i18n/core";
+import { GENERATION_ENABLED } from "@/lib/features";
 
 const Body = z.object({
   kind: z.enum(["video", "story"]),
@@ -23,6 +24,7 @@ const DAILY_VIDEO_LIMIT = Number(process.env.DAILY_VIDEO_GENERATION_LIMIT ?? 3);
  */
 export const POST = route(async (req) => {
   const user = await requireUser();
+  if (!GENERATION_ENABLED) throw new HttpError(403, "Generating new content is turned off.");
   rateLimit(`gen:${user.id}`, 6);
   const b = await parseJson(req, Body);
   const admin = supabaseAdmin();

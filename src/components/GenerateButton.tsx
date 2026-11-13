@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/client/api";
 import { useT } from "@/lib/i18n/client";
 import { Button, ProgressBar } from "./ui";
+import { GENERATION_ENABLED } from "@/lib/features";
 
 interface Job {
   id: string;
@@ -60,6 +61,7 @@ export function GenerateButton({ kind, genre, label, onReady }: { kind: "video" 
     }
   }
 
+  if (!GENERATION_ENABLED) return null;
   if (found) {
     return (
       <div className="w-full space-y-1 rounded-2xl bg-success-soft p-3 text-sm" aria-live="polite">
