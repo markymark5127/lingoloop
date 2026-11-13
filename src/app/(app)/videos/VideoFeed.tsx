@@ -141,6 +141,7 @@ function VideoCard({ item, active, onNext }: { item: VideoItem; active: boolean;
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [blocked, setBlocked] = useState(false);
+  const [muted, setMuted] = useState(false);
   const [slow, setSlow] = useState(false);
   const [showEn, setShowEn] = useState(false);
   const [liked, setLiked] = useState(!!item.progress?.liked);
@@ -165,18 +166,38 @@ function VideoCard({ item, active, onNext }: { item: VideoItem; active: boolean;
 
   const progress = useCallback((patch: Record<string, boolean>) => api(`/api/content/${item.id}/progress`, { method: "POST", json: patch }).catch(() => {}), [item.id]);
 
+  /**
+   * Start playback. Browsers (especially on phones) often block autoplay with sound until the user
+   * taps; when that happens, play muted like TikTok does and offer a "tap for sound" button.
+   */
+  const start = useCallback((v: HTMLVideoElement) => {
+    v.play().then(
+      () => setBlocked(false),
+      () => {
+        if (v.muted) return setBlocked(true);
+        v.muted = true;
+        setMuted(true);
+        v.play().then(
+          () => setBlocked(false),
+          () => setBlocked(true),
+        );
+      },
+    );
+  }, []);
+
+  function unmute() {
+    const v = ref.current!;
+    v.muted = false;
+    setMuted(false);
+    if (v.paused) start(v);
+  }
+
   useEffect(() => {
     const v = ref.current;
     if (!v) return;
-    if (active) {
-      v.play().then(
-        () => setBlocked(false),
-        () => setBlocked(true),
-      );
-    } else {
-      v.pause();
-    }
-  }, [active]);
+    if (active) start(v);
+    else v.pause();
+  }, [active, start]);
 
   useEffect(() => {
     if (ref.current) ref.current.playbackRate = slow ? 0.7 : 1;
@@ -184,7 +205,9 @@ function VideoCard({ item, active, onNext }: { item: VideoItem; active: boolean;
 
   function toggle() {
     const v = ref.current!;
-    if (v.paused) v.play().then(() => setBlocked(false)).catch(() => setBlocked(true));
+    // A tap on a muted video turns the sound on instead of pausing it.
+    if (v.muted && !v.paused) return unmute();
+    if (v.paused) start(v);
     else v.pause();
   }
 
@@ -229,6 +252,18 @@ function VideoCard({ item, active, onNext }: { item: VideoItem; active: boolean;
       {(blocked || (!playing && !ended)) && (
         <button onClick={toggle} className="absolute inset-0 grid place-items-center bg-black/20" aria-label={tr("Play video")}>
           <span className="grid h-20 w-20 place-items-center rounded-full bg-white/90 text-3xl text-black shadow-xl">▶</span>
+        </button>
+      )}
+
+      {muted && playing && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            unmute();
+          }}
+          className="absolute left-1/2 top-[6.5rem] z-10 -translate-x-1/2 rounded-full bg-black/60 px-4 py-2 text-sm font-semibold backdrop-blur"
+        >
+          🔇 {tr("Tap for sound")}
         </button>
       )}
 
