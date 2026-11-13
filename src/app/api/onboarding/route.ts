@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { route, requireUser, parseJson } from "@/lib/api/http";
 import { supabaseServer } from "@/lib/supabase/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { GENRES } from "@/lib/content/schemas";
 import { CEFR_LEVELS } from "@/lib/engine/level";
 import { LOCALES, toLocale } from "@/lib/i18n/core";
@@ -23,7 +24,18 @@ export const POST = route(async (req) => {
   const user = await requireUser();
   const b = await parseJson(req, Body);
   const db = await supabaseServer(); // RLS: can only update own row
-  const { data: current } = await db.from("learning_profiles").select("native_language, target_language, level, levels").eq("user_id", user.id).single();
+  let { data: current } = await db.from("learning_profiles").select("native_language, target_language, level, levels").eq("user_id", user.id).maybeSingle();
+  if (!current) {
+    // The signup trigger normally creates these rows; accounts created before the schema existed
+    // have none, and an UPDATE on a missing row "succeeds" silently, looping onboarding forever.
+    const admin = supabaseAdmin();
+    const fallbackName = user.email?.split("@")[0] ?? "";
+    const { error: pErr } = await admin.from("profiles").upsert({ id: user.id, display_name: b.displayName ?? fallbackName }, { onConflict: "id", ignoreDuplicates: true });
+    if (pErr) throw pErr;
+    const { error: lpErr } = await admin.from("learning_profiles").upsert({ user_id: user.id }, { onConflict: "user_id", ignoreDuplicates: true });
+    if (lpErr) throw lpErr;
+    ({ data: current } = await db.from("learning_profiles").select("native_language, target_language, level, levels").eq("user_id", user.id).maybeSingle());
+  }
   const native = toLocale(b.nativeLanguage ?? current?.native_language);
   const target = b.targetLanguage ?? (current?.target_language as "es" | "ja" | undefined) ?? "es";
   if (!allowedTargets(native).includes(target)) throw new HttpError(400, "That language combination isn't available yet.");
@@ -33,7 +45,7 @@ export const POST = route(async (req) => {
   const switching = current?.target_language !== target;
   const level = switching && b.levelFromHistory ? (levels[target] ?? b.level) : b.level;
   levels[target] = level;
-  const { error } = await db
+  const { data: updated, error } = await db
     .from("learning_profiles")
     .update({
       ...(b.nativeLanguage ? { native_language: b.nativeLanguage } : {}),
@@ -46,8 +58,10 @@ export const POST = route(async (req) => {
       onboarded: true,
       updated_at: new Date().toISOString(),
     })
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .select("user_id");
   if (error) throw error;
+  if (!updated?.length) throw new HttpError(500, "Couldn't save your profile. Please try again.");
   if (b.displayName) await db.from("profiles").update({ display_name: b.displayName }).eq("id", user.id);
   return { ok: true, level, targetLanguage: target };
 });
